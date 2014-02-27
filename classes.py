@@ -1,7 +1,9 @@
 from __future__ import division
+from itertools import chain
 import logging
 import os
 import pandas as pd
+from sklearn.cross_validation import ShuffleSplit
 from constants import *
 from sklearn.base import BaseEstimator, TransformerMixin
 import numpy as np
@@ -75,6 +77,8 @@ class RemoveObjectColumns(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X):
+        logger.info("Removing object columns from:")
+        logger.info(X)
         return X.loc[:, self.mask_]
 
 
@@ -94,11 +98,15 @@ class RemoveAllUniqueColumns(BaseEstimator, TransformerMixin):
     def fit(self, X=None, y=None):
         n_rows = X.shape[0]
         threshold = n_rows * self.threshold
+        # Why is this so much faster than x.nunique()??
         n_unique = [len(x.unique()) for n, x in X.iteritems()]
+        # n_unique = [x.nunique() for n, x in X.iteritems()]
         self.mask_ = [x < threshold for x in n_unique]
         return self
 
     def transform(self, X):
+        logger.info("Removing columns with {}% unique values".format(self.threshold))
+        logger.info(X)
         return X.loc[:, self.mask_]
 
 
@@ -111,8 +119,64 @@ class RemoveNoVarianceColumns(BaseEstimator, TransformerMixin):
 
     def fit(self, X=None, y=None):
         n_unique = [len(x.unique()) for n, x in X.iteritems()]
+        # n_unique = [x.nunique() for n, x in X.iteritems()]
         self.mask_ = [x != 1 for x in n_unique]
         return self
 
     def transform(self, X):
+        logger.info("Removing columns with no variance")
+        logger.info(X)
         return X.loc[:, self.mask_]
+
+
+class FillNAsWithMean(BaseEstimator, TransformerMixin):
+    """
+    Fill NAs with the mean of the column in place
+
+    Pandas fill methods are OK if we want the same value for all NAs,
+    or if we are doing a timeseries, but they are not quite appropriate for this dataset
+    """
+    def __init__(self):
+        pass
+
+    def fit(self, X, y=None):
+        desc = X.describe()
+        self.means_ = desc.loc['mean']
+        return self
+
+    def transform(self, X):
+        logger.info("Filling NAs with column means")
+        logger.info(X)
+        desc = X.describe()
+        # Test set could have NAs in columns that didn't have NAs in train est
+        nas = desc.loc['count'] < X.shape[0]
+        for i, colname in enumerate(X.columns):
+            if nas[i]:
+                X.loc[pd.isnull(X[colname]), colname] = self.means_[i]
+        return X
+
+
+def train_test_split(*arrays, **options):
+    """
+    Adapted split utility for pandas data frames
+    """
+    n_arrays = len(arrays)
+    if n_arrays == 0:
+        raise ValueError("At least one array required as input")
+
+    test_size = options.pop('test_size', None)
+    train_size = options.pop('train_size', None)
+    random_state = options.pop('random_state', None)
+    options['sparse_format'] = 'csr'
+
+    if test_size is None and train_size is None:
+        test_size = 0.25
+
+    n_samples = arrays[0].shape[0]
+    cv = ShuffleSplit(n_samples, test_size=test_size,
+                      train_size=train_size,
+                      random_state=random_state)
+
+    train, test = next(iter(cv))
+    return list(chain.from_iterable((a.iloc[train], a.iloc[test]) for a in arrays))
+

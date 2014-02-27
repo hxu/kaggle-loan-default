@@ -2,6 +2,7 @@ from __future__ import division
 import classes
 from constants import *
 import numpy as np
+import pandas as pd
 
 train_x, train_y = classes.get_train_data()
 
@@ -35,6 +36,8 @@ desc = int_types.describe()
 unique_ints = [len(x.unique()) for n, x in int_types.iteritems()]
 
 
-train_x = classes.RemoveObjectColumns().fit_transform(train_x)
-train_x = classes.RemoveNoVarianceColumns().fit_transform(train_x)
-train_x = classes.RemoveAllUniqueColumns(threshold=0.9).fit_transform(train_x)
+# Looks like about half the rows have NAs in them.  Can't drop rows, otherwise lose too many observations
+# Are NAs possibly correlated with defaults?
+# 431 columns have NANs, so can't drop columns either
+# All the columns appear to be float columns -- can just interpolate maybe?
+pd.DataFrame

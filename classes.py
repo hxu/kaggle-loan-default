@@ -3,6 +3,8 @@ import logging
 import os
 import pandas as pd
 from constants import *
+from sklearn.base import BaseEstimator, TransformerMixin
+import numpy as np
 
 
 logger = logging.getLogger('loan_default')
@@ -60,3 +62,48 @@ class Submission(object):
         outpath = os.path.join(SUBMISSION_PATH, filename)
         logger.info("Saving solutions to file {}".format(outpath))
 
+
+class RemoveObjectColumns(BaseEstimator, TransformerMixin):
+    """
+    Given a df, remove all columns of type object
+    """
+    def __init__(self):
+        pass
+
+    def transform(self, X):
+        object_types_mask = X.dtypes != np.object
+        return X.loc[:, object_types_mask]
+
+
+class RemoveAllUniqueColumns(BaseEstimator, TransformerMixin):
+    """
+    Remove all columns where unique ~= n_rows.
+
+    Arguments:
+    ==========
+    threshold: float
+        Specifies how aggressively to remove columns.  If threshold is 0.9, then
+        any column where n_unique >= 0.9 * n_row is removed
+    """
+    def __init__(self, threshold):
+        self.threshold = threshold
+
+    def transform(self, X):
+        n_rows = X.shape[0]
+        threshold = n_rows * self.threshold
+        n_unique = [len(x.unique()) for n, x in X.iteritems()]
+        unique_mask = [x < threshold for x in n_unique]
+        return X.loc[:, unique_mask]
+
+
+class RemoveNoVarianceColumns(BaseEstimator, TransformerMixin):
+    """
+    Remove all columns that have no variance (1 unique value)
+    """
+    def __init__(self):
+        pass
+
+    def transform(self, X):
+        n_unique = [len(x.unique()) for n, x in X.iteritems()]
+        unique_mask = [x != 1 for x in n_unique]
+        return X.loc[:, unique_mask]

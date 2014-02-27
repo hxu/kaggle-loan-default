@@ -14,8 +14,10 @@ train_x, train_y = classes.get_train_data()
 # the int64s are probably good candidates for categorical variables
 # The object data types turn out to be really long numbers.  Maybe account numbers or something?
 object_types_mask = train_x.dtypes == np.object
-object_types = train_x.iloc[:, object_types_mask]
+object_types = train_x.loc[:, object_types_mask]
 object_types.iloc[0:5]
+
+# Possible leakage via the object types numbers?
 
 # Actually from the description we can see that some of these columns may be useful (the unique count is not very close to the total count)
 desc = object_types.describe()
@@ -31,3 +33,8 @@ desc = int_types.describe()
 
 # most
 unique_ints = [len(x.unique()) for n, x in int_types.iteritems()]
+
+
+train_x = classes.RemoveObjectColumns().transform(train_x)
+train_x = classes.RemoveNoVarianceColumns().transform(train_x)
+train_x = classes.RemoveAllUniqueColumns(threshold=0.9).transform(train_x)

@@ -71,11 +71,11 @@ class RemoveObjectColumns(BaseEstimator, TransformerMixin):
         pass
 
     def fit(self, X=None, y=None):
+        self.mask_ = X.dtypes != np.object
         return self
 
     def transform(self, X):
-        object_types_mask = X.dtypes != np.object
-        return X.loc[:, object_types_mask]
+        return X.loc[:, self.mask_]
 
 
 class RemoveAllUniqueColumns(BaseEstimator, TransformerMixin):
@@ -92,14 +92,14 @@ class RemoveAllUniqueColumns(BaseEstimator, TransformerMixin):
         self.threshold = threshold
 
     def fit(self, X=None, y=None):
-        return self
-
-    def transform(self, X):
         n_rows = X.shape[0]
         threshold = n_rows * self.threshold
         n_unique = [len(x.unique()) for n, x in X.iteritems()]
-        unique_mask = [x < threshold for x in n_unique]
-        return X.loc[:, unique_mask]
+        self.mask_ = [x < threshold for x in n_unique]
+        return self
+
+    def transform(self, X):
+        return X.loc[:, self.mask_]
 
 
 class RemoveNoVarianceColumns(BaseEstimator, TransformerMixin):
@@ -110,25 +110,9 @@ class RemoveNoVarianceColumns(BaseEstimator, TransformerMixin):
         pass
 
     def fit(self, X=None, y=None):
+        n_unique = [len(x.unique()) for n, x in X.iteritems()]
+        self.mask_ = [x != 1 for x in n_unique]
         return self
 
     def transform(self, X):
-        n_unique = [len(x.unique()) for n, x in X.iteritems()]
-        unique_mask = [x != 1 for x in n_unique]
-        return X.loc[:, unique_mask]
-
-
-class ConvertToCategorical(BaseEstimator, TransformerMixin):
-    """
-    Finds columns with at most n unique values and converts it to a set of categorical columns
-
-    Arguments:
-    ==========
-    max_cat: integer
-        The maximum number of unique values to consider as categorical
-    """
-    def __init__(self, max_cat):
-        self.max_cat = max_cat
-
-    def fit(self, X=None, y=None):
-        return X
+        return X.loc[:, self.mask_]

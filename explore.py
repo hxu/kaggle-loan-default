@@ -35,6 +35,6 @@ desc = int_types.describe()
 unique_ints = [len(x.unique()) for n, x in int_types.iteritems()]
 
 
-train_x = classes.RemoveObjectColumns().transform(train_x)
-train_x = classes.RemoveNoVarianceColumns().transform(train_x)
-train_x = classes.RemoveAllUniqueColumns(threshold=0.9).transform(train_x)
+train_x = classes.RemoveObjectColumns().fit_transform(train_x)
+train_x = classes.RemoveNoVarianceColumns().fit_transform(train_x)
+train_x = classes.RemoveAllUniqueColumns(threshold=0.9).fit_transform(train_x)

@@ -4,6 +4,7 @@ import logging
 import os
 import pandas as pd
 from sklearn.cross_validation import ShuffleSplit
+from sklearn.preprocessing import OneHotEncoder
 from constants import *
 from sklearn.base import BaseEstimator, TransformerMixin
 import numpy as np
@@ -154,6 +155,35 @@ class FillNAsWithMean(BaseEstimator, TransformerMixin):
             if nas[i]:
                 X.loc[pd.isnull(X[colname]), colname] = self.means_[i]
         return X
+
+
+class CategoricalExpansion(BaseEstimator, TransformerMixin):
+    """
+    Uses one hot encoder to expand categorical columns
+    Don't use this in a pipeline
+
+    Arguments:
+    =========
+    threshold: int
+        The maximum number of unique values that a column can have
+        for it to be considered categorical
+
+    Returns:
+    ========
+    Sparse matrix of expanded column.
+    """
+    def __init__(self, threshold):
+        self.threshold = threshold
+
+    def fit(self, X, y=None):
+        uniques = [(len(x.unique()), x.dtype.kind) for n, x in X.iteritems()]
+        self.mask_ = [(x[0] < self.threshold and x[1] == 'i') for x in uniques]
+        self.encoder_ = OneHotEncoder()
+        self.encoder_.fit(X.loc[:, self.mask_])
+        return self
+
+    def transform(self, X):
+        return self.encoder_.transform(X.loc[:, self.mask_])
 
 
 def train_test_split(*arrays, **options):

@@ -1,4 +1,5 @@
 from __future__ import division
+from sklearn.preprocessing import OneHotEncoder
 import classes
 from constants import *
 import numpy as np
@@ -29,15 +30,18 @@ desc = object_types.describe()
 int_types_mask = train_x.dtypes == np.int64
 int_types = train_x.loc[:, int_types_mask]
 desc = int_types.describe()
+uniques = [len(x.unique()) for n, x in int_types.iteritems()]
+categorical = [x < 50 for x in uniques]
+cat_columns = int_types.loc[:, categorical]
+cat = cat_columns.iloc[:, 0:2]
+one_hot = OneHotEncoder()
 # Some columns have 0 standard deviation
 # IDEA - filter out columns where SD ~ 0
 
 # most
 unique_ints = [len(x.unique()) for n, x in int_types.iteritems()]
 
-
 # Looks like about half the rows have NAs in them.  Can't drop rows, otherwise lose too many observations
 # Are NAs possibly correlated with defaults?
 # 431 columns have NANs, so can't drop columns either
 # All the columns appear to be float columns -- can just interpolate maybe?
-pd.DataFrame

@@ -40,3 +40,33 @@ def rf_001():
     res_test = pipeline.fit_transform(test_x)
     pred = default_predictor.predict(res_test)
 
+
+def logistic_001():
+    # Logistic regression will automatically oversample the rarer class, maybe
+    # this will perform better than RF
+    # However, it requires that the features be scaled and centered,
+    # which means that we'll need to account for categorical variables as well
+    x, y = classes.get_train_data()
+    y_default = y > 0
+
+    train_x, test_x, \
+        train_y, test_y, \
+        train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.5)
+
+    del x
+    gc.collect()
+
+    remove_obj = classes.RemoveObjectColumns()
+    remove_novar = classes.RemoveNoVarianceColumns()
+    remove_unique = classes.RemoveAllUniqueColumns(threshold=0.9)
+    fill_nas = classes.FillNAsWithMean()
+    pipeline = Pipeline([
+        ('obj', remove_obj),
+        ('novar', remove_novar),
+        ('unique', remove_unique),
+        ('fill', fill_nas),
+    ])
+
+    features_x = pipeline.fit_transform(train_x)
+    one_hot = classes.CategoricalExpansion(threshold=30)
+    categorical_features

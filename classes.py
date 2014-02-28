@@ -58,6 +58,35 @@ def plot_roc(fpr, tpr):
     pl.show()
 
 
+def plot_precision_recall(precision, recall):
+    # score = auc(fpr, tpr)
+    pl.clf()
+    pl.plot(precision, recall, label='Precision/Recall')
+    pl.plot([0, 1], [0, 1], 'k--')
+    pl.xlim([0.0, 1.0])
+    pl.ylim([0.0, 1.0])
+    pl.xlabel('Precision')
+    pl.ylabel('Recall')
+    pl.title('Precision recall curve')
+    pl.legend(loc="lower right")
+    pl.show()
+
+
+def get_threshold(fpr, tpr, thresholds):
+    diffs = tpr - fpr
+    m = diffs.argmax()
+    logger.info("Threshold {:.4f} has TPR of {:.4%} and FPR of {:.4%}".format(thresholds[m], tpr[m], fpr[m]))
+    return thresholds[m]
+
+
+def find_threshold_for_n_positives(n, thresholds, predictions):
+    """
+    Given an array of thresholds from an ROC curve, and an array predictions, find the threshold where at most
+    n predictions are positive
+    """
+    pass
+
+
 class Submission(object):
     """
     Utility function that takes care of some common tasks relating to submissiosn files
@@ -122,7 +151,7 @@ class RemoveAllUniqueColumns(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X):
-        logger.info("Removing columns with {}% unique values".format(self.threshold))
+        logger.info("Removing columns with {:.1%} unique values".format(self.threshold))
         logger.info(X)
         return X.loc[:, self.mask_]
 

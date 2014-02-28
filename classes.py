@@ -132,6 +132,8 @@ class RemoveNoVarianceColumns(BaseEstimator, TransformerMixin):
 
 class FillNAsWithMean(BaseEstimator, TransformerMixin):
     """
+    DEPRECATED: Use sklearn.preprocessing.Imputer
+
     Fill NAs with the mean of the column in place
 
     Pandas fill methods are OK if we want the same value for all NAs,

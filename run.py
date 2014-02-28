@@ -256,3 +256,11 @@ def golden_features_001():
     # This gets an AUC of .92 or so
     # Average precision of .41
     classes.plot_roc(fpr, tpr)
+
+
+def golden_features_002():
+    """
+    Trying out f275 and f521 sort order
+    see http://www.kaggle.com/c/loan-default-prediction/forums/t/6962/important-new-data-leakage?page=3
+    """
+    pass

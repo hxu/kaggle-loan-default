@@ -1,8 +1,8 @@
 import gc
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn import preprocessing
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve
+from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, mean_absolute_error
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, Imputer
 import classes
@@ -72,6 +72,43 @@ def logistic_001():
 
     features_x = pipeline.fit_transform(train_x)
     one_hot = classes.CategoricalExpansion(threshold=30)
+
+
+def loss_001():
+    """
+    Predicting only the losses
+    """
+    x, y = classes.get_train_data()
+    # get only the rows with losses
+    mask = y > 0
+    x = x.loc[mask]
+    y = y.loc[mask]
+
+    train_x, test_x, \
+        train_y, test_y, = classes.train_test_split(x, y, test_size=0.5)
+
+    del x
+    gc.collect()
+
+    remove_obj = classes.RemoveObjectColumns()
+    remove_novar = classes.RemoveNoVarianceColumns()
+    remove_unique = classes.RemoveAllUniqueColumns(threshold=0.9)
+    fill_nas = Imputer()
+    pipeline = Pipeline([
+        ('obj', remove_obj),
+        ('novar', remove_novar),
+        ('unique', remove_unique),
+        ('fill', fill_nas),
+    ])
+
+    estimator = RandomForestRegressor(n_estimators=100, oob_score=True, n_jobs=4, verbose=3)
+    features_x = pipeline.fit_transform(train_x)
+    estimator.fit(features_x, train_y)
+
+    features_x_test = pipeline.transform(test_x)
+    pred = estimator.predict(features_x_test)
+    # 5.40844 on 4892 samples (2-fold split)
+    score = mean_absolute_error(test_y, pred)
 
 
 def golden_features_001():

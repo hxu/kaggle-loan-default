@@ -4,10 +4,12 @@ import logging
 import os
 import pandas as pd
 from sklearn.cross_validation import ShuffleSplit
+from sklearn.metrics import auc
 from sklearn.preprocessing import OneHotEncoder
 from constants import *
 from sklearn.base import BaseEstimator, TransformerMixin
 import numpy as np
+import matplotlib.pylab as pl
 
 
 logger = logging.getLogger('loan_default')
@@ -40,6 +42,20 @@ def get_train_x():
 
 def get_train_y():
     return pd.read_csv(TRAIN_DATA_FILE, na_values='NA', index_col='id', usecols=['id', 'loss'])
+
+
+def plot_roc(fpr, tpr):
+    score = auc(fpr, tpr)
+    pl.clf()
+    pl.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % score)
+    pl.plot([0, 1], [0, 1], 'k--')
+    pl.xlim([0.0, 1.0])
+    pl.ylim([0.0, 1.0])
+    pl.xlabel('False Positive Rate')
+    pl.ylabel('True Positive Rate')
+    pl.title('Receiver operating characteristic example')
+    pl.legend(loc="lower right")
+    pl.show()
 
 
 class Submission(object):

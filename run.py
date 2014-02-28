@@ -2,7 +2,8 @@ import gc
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn import preprocessing
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, mean_absolute_error
+from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, mean_absolute_error, \
+    average_precision_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, Imputer
 import classes
@@ -44,20 +45,17 @@ def staged_001():
 
     # Now we have to pick a threshold
     # We'll pick a threshold that maximizes tpr - fpr
-
-    # It seems that the logistic regression is not actually that good.
-    # Even with the high AUC, the recall /precision seem to be quite bad
+    # This will give us a set where about 1/3 of the observations are true positives
     default_pred = logistic.predict_proba(features_x)[:, logistic.classes_].flatten()
     fpr, tpr, thresholds = roc_curve(train_y_default.values, default_pred)
     precision, recall, thresholds = precision_recall_curve(
         train_y_default.values, default_pred)
-    score = roc_auc_score(train_y_default.values, default_pred, average="weighted")
+    average_precision = average_precision_score(train_y_default.values, default_pred)
+    score = roc_auc_score(train_y_default.values, default_pred)
     threshold = classes.get_threshold(fpr, tpr, thresholds)
     log_mask = default_pred > threshold
 
     # Fit the random forest
-    # We'll use the actual defaults instead of the ones that the logistic regression tells us to use
-    # Not sure if this is correct or not -- maybe should use the samples that the logistic regression predicts are defaults
     mask = train_y > 0
     rf_train_x = train_x.loc[log_mask]
     rf_train_y = train_y.loc[log_mask]
@@ -73,7 +71,7 @@ def staged_001():
         ('fill', fill_nas),
     ])
 
-    rf_estimator = RandomForestRegressor(n_estimators=100, oob_score=True, n_jobs=4, verbose=3)
+    rf_estimator = RandomForestRegressor(n_estimators=10, oob_score=True, n_jobs=4, verbose=3)
     rf_features_x = rf_pipeline.fit_transform(rf_train_x)
     rf_estimator.fit(rf_features_x, rf_train_y)
 
@@ -91,7 +89,16 @@ def staged_001():
     preds = default_pred.astype(np.float64)
     preds[preds == 1] = loss_pred
 
-    # This is a pretty terrible MAE score of 2.388
+    # This is a pretty terrible MAE score of 2.388 when training RF on true positives only
+    # MAE goes to 1.6 or so when training on predicted positives
+    score = mean_absolute_error(test_y, preds)
+
+    # what happens if we don't use the RF and just use the average of the defaults?
+    # MAE of 1.2 or so
+    # Issue seems to be still picking up too many false positives
+    mean = rf_train_y.mean()
+    preds = default_pred.astype(np.float64)
+    preds[preds == 1] = mean
     score = mean_absolute_error(test_y, preds)
 
 
@@ -232,10 +239,12 @@ def golden_features_001():
     # so the tpr is the # of true positives / total positives
     # fpr must be # of false positives / negatives
     fpr, tpr, thresholds = roc_curve(test_y_default.values, pred_y)
+    average_precision = average_precision_score(test_y_default.values, pred_y)
     threshold = classes.get_threshold(fpr, tpr, thresholds)
 
     df = pd.DataFrame({"actuals": test_y, "predicted": pred_y.flatten() > threshold})
     predicted_defaults = df[df['predicted']]
 
     # This gets an AUC of .92 or so
+    # Average precision of .41
     classes.plot_roc(fpr, tpr)

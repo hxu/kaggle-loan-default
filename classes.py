@@ -59,14 +59,14 @@ def plot_roc(fpr, tpr):
 
 
 def plot_precision_recall(precision, recall):
-    # score = auc(fpr, tpr)
+    score = auc(recall, precision)
     pl.clf()
-    pl.plot(precision, recall, label='Precision/Recall')
+    pl.plot(recall, precision, label='Precision Recall curve (area = {:.2%}'.format(score))
     pl.plot([0, 1], [0, 1], 'k--')
     pl.xlim([0.0, 1.0])
     pl.ylim([0.0, 1.0])
-    pl.xlabel('Precision')
-    pl.ylabel('Recall')
+    pl.xlabel('Recall')
+    pl.ylabel('Precision')
     pl.title('Precision recall curve')
     pl.legend(loc="lower right")
     pl.show()

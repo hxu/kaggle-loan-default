@@ -165,9 +165,9 @@ def loss_001():
     """
     x, y = classes.get_train_data()
     # get only the rows with losses
-    mask = y > 0
-    x = x.loc[mask]
-    y = y.loc[mask]
+    # mask = y > 0
+    # x = x.loc[mask]
+    # y = y.loc[mask]
 
     train_x, test_x, \
         train_y, test_y, = classes.train_test_split(x, y, test_size=0.5)
@@ -187,13 +187,22 @@ def loss_001():
     ])
 
     estimator = RandomForestRegressor(n_estimators=100, oob_score=True, n_jobs=4, verbose=3)
-    features_x = pipeline.fit_transform(train_x)
-    estimator.fit(features_x, train_y)
+    mask = train_y > 0
+    features_x = pipeline.fit_transform(train_x.loc[mask])
+    estimator.fit(features_x, train_y.loc[mask])
 
-    features_x_test = pipeline.transform(test_x)
+    mask = test_y > 0
+    features_x_test = pipeline.transform(test_x.loc[mask])
     pred = estimator.predict(features_x_test)
     # 5.40844 on 4892 samples (2-fold split)
     score = mean_absolute_error(test_y, pred)
+
+    # Ceiling analysis - assume we can get get a classifier that is 100% accurate, what would the MAE be?
+    all_pred = test_y.copy().astype(np.float64)
+    all_pred.loc[all_pred > 0] = pred
+    # 0.50, so actually a really good score
+    # I guess the strategy should be to substantially improve the quality of the classifer
+    score = mean_absolute_error(test_y, all_pred)
 
 
 def golden_features_001():
@@ -204,7 +213,7 @@ def golden_features_001():
     x = x[['f527', 'f528']]
     # Adding f247 makes the result worse
     # x = x[['f527', 'f528', 'f247']]
-    # Should also try diffing these columns
+    # Diff doesn't improve any
     y_default = y > 0
 
     train_x, test_x, \
@@ -242,9 +251,8 @@ def golden_features_001():
     average_precision = average_precision_score(test_y_default.values, pred_y)
     threshold = classes.get_threshold(fpr, tpr, thresholds)
 
-    df = pd.DataFrame({"actuals": test_y, "predicted": pred_y.flatten() > threshold})
-    predicted_defaults = df[df['predicted']]
-
+    # df = pd.DataFrame({"actuals": test_y, "predicted": pred_y.flatten() > threshold})
+    # predicted_defaults = df[df['predicted']]
     # This gets an AUC of .92 or so
     # Average precision of .41
     classes.plot_roc(fpr, tpr)

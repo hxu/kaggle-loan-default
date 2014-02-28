@@ -7,6 +7,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, Imputer
 import classes
 import numpy as np
+import pandas as pd
 from classes import logger
 from constants import *
 import matplotlib.pylab as pl
@@ -112,16 +113,43 @@ def logistic_001():
     remove_obj = classes.RemoveObjectColumns()
     remove_novar = classes.RemoveNoVarianceColumns()
     remove_unique = classes.RemoveAllUniqueColumns(threshold=0.9)
-    fill_nas = classes.FillNAsWithMean()
+    fill_nas = Imputer()
     pipeline = Pipeline([
         ('obj', remove_obj),
         ('novar', remove_novar),
         ('unique', remove_unique),
-        ('fill', fill_nas),
+        # Filling NAs will convert to ndarray
+        # But we need dframe for categorical expansion
+        # ('fill', fill_nas),
     ])
 
     features_x = pipeline.fit_transform(train_x)
     one_hot = classes.CategoricalExpansion(threshold=30)
+    categoricals = one_hot.fit_transform(features_x)
+    # Remove the categorical features from the dataset
+    mask = [not x for x in one_hot.mask_]
+    features_x = features_x.loc[:, mask]
+    features_x = fill_nas.fit_transform(features_x)
+    # now stack
+    features_x = np.hstack([features_x, categoricals])
+    # Standardize
+    scale = StandardScaler()
+    features_x = scale.fit_transform(features_x)
+
+    estimator = LogisticRegression(C=1e20)
+    # This doesn't finish in a reasonable amount of time.  Too many dimensions
+    estimator.fit(features_x, train_y_default)
+
+    # Now generate the test set
+    features_x_test = pipeline.transform(test_x)
+    categoricals_test = one_hot.transform(features_x_test)
+    features_x_test = features_x.loc[:, mask]
+    features_x_test = fill_nas.fit_transform(features_x_test)
+    features_x_test = np.hstack([features_x_test, categoricals_test])
+    features_x_test = scale.transform(features_x_test)
+
+    # Get only positive probabilities
+    pred_y = estimator.predict_proba(features_x_test)[:, estimator.classes_]
 
 
 def loss_001():
@@ -169,6 +197,7 @@ def golden_features_001():
     x = x[['f527', 'f528']]
     # Adding f247 makes the result worse
     # x = x[['f527', 'f528', 'f247']]
+    # Should also try diffing these columns
     y_default = y > 0
 
     train_x, test_x, \
@@ -200,7 +229,13 @@ def golden_features_001():
     score = roc_auc_score(test_y_default.values, pred_y)
     precision, recall, thresholds = precision_recall_curve(
         test_y_default.values, pred_y)
+    # so the tpr is the # of true positives / total positives
+    # fpr must be # of false positives / negatives
     fpr, tpr, thresholds = roc_curve(test_y_default.values, pred_y)
+    threshold = classes.get_threshold(fpr, tpr, thresholds)
+
+    df = pd.DataFrame({"actuals": test_y, "predicted": pred_y.flatten() > threshold})
+    predicted_defaults = df[df['predicted']]
 
     # This gets an AUC of .92 or so
     classes.plot_roc(fpr, tpr)

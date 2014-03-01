@@ -31,7 +31,7 @@ def staged_001():
 
     train_x, test_x, \
     train_y, test_y, \
-    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.5)
+    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.2)
 
     del x
     gc.collect()
@@ -216,10 +216,17 @@ def golden_features_001():
     http://www.kaggle.com/c/loan-default-prediction/forums/t/7115/golden-features
     """
     x, y = classes.get_train_data()
-    x = x[['f527', 'f528']]
+    # x = x[['f527', 'f528']]
     # Adding f247 makes the result worse
     # x = x[['f527', 'f528', 'f247']]
     # Diff doesn't improve any
+
+    # Using these diffs takes teh f1 score to 0.73!
+    x = pd.DataFrame({
+        'x1': x['f527'] - x['f528'],
+        'x2': x['f528'] - x['f274'],
+        # 'x3': x['f527'] - x['f274']
+    })
     y_default = y > 0
 
     train_x, test_x, \
@@ -262,7 +269,14 @@ def golden_features_001():
     # predicted_defaults = df[df['predicted']]
     # This gets an AUC of .92 or so
     # Average precision of .41
-    classes.plot_roc(fpr, tpr)
+    # Using the diffs gets 0.58 of average precision
+    # classes.plot_roc(fpr, tpr)
+
+    # Using mean of training Ys doesn't help score
+    preds = pred_y > threshold
+    preds = preds.astype(np.float64)
+    # Score of 0.78
+    score = mean_absolute_error(test_y, preds)
 
 
 def cv_for_column(x, y, c):
@@ -368,6 +382,8 @@ def golden_features_002():
             best_columns.add(feat[0])
 
     # Doesn't seem to include the golden features that others have reported
+    # One of the golden features is also getting filtered out by the remove_unique
+    # This is because we're also removing legitimate floats
     best_columns = {'f129', 'f14', 'f142', 'f15', 'f17',
                     'f182', 'f188', 'f191', 'f192', 'f198',
                     'f20', 'f201', 'f21', 'f22', 'f24',
@@ -395,3 +411,10 @@ def golden_features_002():
     for c in cols:
         this_res = cv_for_column(x, y_default, c)
         res.append(this_res)
+
+
+def golden_features_003():
+    """
+    Some have suggested to look for differences between highly correlated columns
+    Then optimize around MAE
+    """

@@ -151,6 +151,7 @@ class RemoveObjectColumns(BaseEstimator, TransformerMixin):
 class RemoveAllUniqueColumns(BaseEstimator, TransformerMixin):
     """
     Remove all columns where unique ~= n_rows.
+    Ignore floats
 
     Arguments:
     ==========
@@ -165,9 +166,16 @@ class RemoveAllUniqueColumns(BaseEstimator, TransformerMixin):
         n_rows = X.shape[0]
         threshold = n_rows * self.threshold
         # Why is this so much faster than x.nunique()??
-        n_unique = [len(x.unique()) for n, x in X.iteritems()]
+        n_unique = [(len(x.unique()), x.dtype.kind) for n, x in X.iteritems()]
         # n_unique = [x.nunique() for n, x in X.iteritems()]
-        self.mask_ = [x < threshold for x in n_unique]
+        mask = []
+        for x in n_unique:
+            if x[1] != 'f':
+                mask.append(x[0] < threshold)
+            else:
+                # Ignore floats
+                mask.append(True)
+        self.mask_ = mask
         return self
 
     def transform(self, X):

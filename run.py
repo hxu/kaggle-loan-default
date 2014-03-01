@@ -4,6 +4,7 @@ import itertools
 from sklearn.cross_validation import StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn import preprocessing
+from sklearn.externals.joblib import Parallel, delayed
 from sklearn.grid_search import GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, mean_absolute_error, \
@@ -309,6 +310,14 @@ def cv_for_column(x, y, c):
     return this_res
 
 
+def parallel_column_search(x, y, cs):
+    res = []
+    for c in cs:
+        this_res = cv_for_column(x, y, c)
+        res.append(this_res)
+    return res
+
+
 def golden_features_002():
     """
     Maybe Trying out f275 and f521 sort order
@@ -316,7 +325,6 @@ def golden_features_002():
 
     Or just looking for more features
     Some are reporting AUCs of .99 and F1s of .91 with just 2-4 features
-    Not that many features, so parallelized search should be pretty fast
 
     GridCV doesn't quite play well with this pipeline, so we'll roll our own
     """
@@ -336,11 +344,11 @@ def golden_features_002():
 
     # Columns we want to search over
     cols = x.columns.tolist()
-    res = []
+    chunks = list(classes.chunks(cols, 4))
 
-    for c in cols:
-        this_res = cv_for_column(x, y_default, c)
-        res.append(this_res)
+    res = Parallel(n_jobs=4, verbose=3)(
+        delayed(parallel_column_search)(x, y_default, cs) for cs in chunks
+    )
 
     # Get the 50 best columns from each
     best_columns = set()
@@ -358,6 +366,8 @@ def golden_features_002():
     for metric in [f1s, auc, prec]:
         for feat in metric[0:50]:
             best_columns.add(feat[0])
+
+    # Doesn't seem to include the golden features that others have reported
     best_columns = {'f129', 'f14', 'f142', 'f15', 'f17',
                     'f182', 'f188', 'f191', 'f192', 'f198',
                     'f20', 'f201', 'f21', 'f22', 'f24',
@@ -378,6 +388,7 @@ def golden_features_002():
     selected_res = [r for r in res if r['column'] in best_columns]
 
     # Now lets do pairs or triples of each of the best
+    # this will take a looong time, 85,000 possible combinations of 3
     cols = itertools.chain(itertools.combinations(best_columns, 2), itertools.combinations(best_columns, 3))
     res = []
 

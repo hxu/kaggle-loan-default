@@ -2,6 +2,7 @@ from __future__ import division
 from itertools import chain
 import logging
 import os
+import math
 import pandas as pd
 from sklearn.cross_validation import ShuffleSplit
 from sklearn.linear_model import LogisticRegression
@@ -324,3 +325,12 @@ def train_test_split(*arrays, **options):
     train, test = next(iter(cv))
     return list(chain.from_iterable((a.iloc[train], a.iloc[test]) for a in arrays))
 
+
+def chunks(l, n):
+    """
+    Yield n chunks from l.
+    """
+    chunk_size = int(math.ceil(len(l) / n))
+
+    for i in xrange(0, len(l), chunk_size):
+        yield l[i:i+chunk_size]

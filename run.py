@@ -1,6 +1,10 @@
+from __future__ import division
 import gc
+import itertools
+from sklearn.cross_validation import StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn import preprocessing
+from sklearn.grid_search import GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, mean_absolute_error, \
     average_precision_score
@@ -260,6 +264,51 @@ def golden_features_001():
     classes.plot_roc(fpr, tpr)
 
 
+def cv_for_column(x, y, c):
+    logger.info("Testing column {}".format(c))
+    kfold = StratifiedKFold(y, n_folds=5)
+    this_res = {
+        'column': c,
+        'auc': [],
+        'avg_prec': [],
+        'f1': [],
+        'threshold': []
+    }
+
+    # Select the column first so we don't run into memory issues
+    select = classes.ColumnSelector(cols=c)
+    this_x = select.transform(x)
+
+    for train_idx, test_idx in kfold:
+        # This creates copies, so we run into memory errors
+        train_x, test_x = this_x.iloc[train_idx], this_x.iloc[test_idx]
+        train_y, test_y = y.iloc[train_idx], y.iloc[test_idx]
+
+        impute = Imputer()
+        scale = StandardScaler()
+        estimator = LogisticRegression(C=1e20)
+        pipeline = Pipeline([
+            ('impute', impute),
+            ('scale', scale),
+            ('estimator', estimator)
+        ])
+
+        pipeline.fit(train_x, train_y)
+        pred_y = pipeline.predict_proba(test_x)[:, estimator.classes_].flatten()
+        auc = roc_auc_score(test_y.values, pred_y)
+        average_precision = average_precision_score(test_y.values, pred_y)
+        precision, recall, thresholds = precision_recall_curve(
+            test_y.values, pred_y)
+        f1s = classes.f1_scores(precision, recall)
+        max_f1 = f1s.max()
+        threshold = thresholds[f1s.argmax()]
+        this_res['auc'].append(auc)
+        this_res['avg_prec'].append(average_precision)
+        this_res['f1'].append(max_f1)
+        this_res['threshold'].append(threshold)
+    return this_res
+
+
 def golden_features_002():
     """
     Maybe Trying out f275 and f521 sort order
@@ -268,34 +317,70 @@ def golden_features_002():
     Or just looking for more features
     Some are reporting AUCs of .99 and F1s of .91 with just 2-4 features
     Not that many features, so parallelized search should be pretty fast
+
+    GridCV doesn't quite play well with this pipeline, so we'll roll our own
     """
 
     x, y = classes.get_train_data()
-    # Adding f247 makes the result worse
-    # x = x[['f527', 'f528', 'f247']]
-    # Diff doesn't improve any
     y_default = y > 0
 
-    train_x, test_x, \
-    train_y, test_y, \
-    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.2)
-
-    del x
-    gc.collect()
-
-    cols = train_x.columns.tolist()
-
-    select = classes.ColumnSelector(cols=0)
-    impute = Imputer()
-    scale = StandardScaler()
-    estimator = LogisticRegression(C=1e20)
-
-    pipeline = Pipeline([
-        ('select', select),
-        ('impute', impute),
-        ('scale', scale),
-        ('estimator', estimator)
+    remove_obj = classes.RemoveObjectColumns()
+    remove_novar = classes.RemoveNoVarianceColumns()
+    remove_unique = classes.RemoveAllUniqueColumns(threshold=0.98)
+    clean = Pipeline([
+        ('obj', remove_obj),
+        ('novar', remove_novar),
+        ('unique', remove_unique),
     ])
+    x = clean.fit_transform(x)
 
-    pipeline.fit(train_x, train_y_default)
-    pred_y = pipeline.predict_proba(test_x)[:, estimator.classes_].flatten()
+    # Columns we want to search over
+    cols = x.columns.tolist()
+    res = []
+
+    for c in cols:
+        this_res = cv_for_column(x, y_default, c)
+        res.append(this_res)
+
+    # Get the 50 best columns from each
+    best_columns = set()
+
+    # Top f1 is about .219
+    f1s = sorted([(r['column'], sum(r['f1']) / 5.0) for r in res], key=lambda l: l[1], reverse=True)
+    # Top auc is .634
+    auc = sorted([(r['column'], sum(r['auc']) / 5.0) for r in res], key=lambda l: l[1], reverse=True)
+    # Top precision is 0.546 -- the best performers perform much better than the next best
+    prec = sorted([(r['column'], sum(r['avg_prec']) / 5.0) for r in res], key=lambda l: l[1], reverse=True)
+    # Basically 0.8 - 0.11
+    threshold = sorted([(r['column'], sum(r['threshold']) / 5.0) for r in res], key=lambda l: l[1], reverse=True)
+
+    # Gives us 81, meaning there's an overlap
+    for metric in [f1s, auc, prec]:
+        for feat in metric[0:50]:
+            best_columns.add(feat[0])
+    best_columns = {'f129', 'f14', 'f142', 'f15', 'f17',
+                    'f182', 'f188', 'f191', 'f192', 'f198',
+                    'f20', 'f201', 'f21', 'f22', 'f24',
+                    'f25', 'f26', 'f262', 'f268', 'f281',
+                    'f282', 'f283', 'f305', 'f31', 'f314',
+                    'f315', 'f32', 'f321', 'f322', 'f323',
+                    'f324', 'f329', 'f332', 'f333', 'f351',
+                    'f352', 'f376', 'f377', 'f395', 'f396', 'f397',
+                    'f398', 'f399', 'f4', 'f400', 'f402', 'f404', 'f405',
+                    'f406', 'f424', 'f443', 'f46', 'f50', 'f517',
+                    'f56', 'f595', 'f60', 'f604', 'f629', 'f63', 'f630',
+                    'f64', 'f648', 'f649', 'f666', 'f669', 'f671',
+                    'f675', 'f676', 'f678', 'f679', 'f723', 'f724',
+                    'f725', 'f763', 'f765', 'f766', 'f767', 'f768',
+                    'f776', 'f777'}
+
+    # check the full results of each column
+    selected_res = [r for r in res if r['column'] in best_columns]
+
+    # Now lets do pairs or triples of each of the best
+    cols = itertools.chain(itertools.combinations(best_columns, 2), itertools.combinations(best_columns, 3))
+    res = []
+
+    for c in cols:
+        this_res = cv_for_column(x, y_default, c)
+        res.append(this_res)

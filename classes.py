@@ -4,6 +4,7 @@ import logging
 import os
 import pandas as pd
 from sklearn.cross_validation import ShuffleSplit
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import auc
 from sklearn.preprocessing import OneHotEncoder
 from constants import *
@@ -265,7 +266,7 @@ class ColumnSelector(BaseEstimator, TransformerMixin):
     DataFrame of the selected columns
     """
     def __init__(self, cols):
-        if not isinstance(cols, list):
+        if not isinstance(cols, list) and not isinstance(cols, tuple):
             cols = [cols]
 
         self.cols = cols
@@ -278,6 +279,25 @@ class ColumnSelector(BaseEstimator, TransformerMixin):
             return X.loc[:, self.cols]
         else:
             return X.iloc[:, self.cols]
+
+
+class ThresholdLogisticRegression(LogisticRegression):
+    """
+    Custom predict that uses a different threshold
+    """
+    def __init__(self, penalty='l2', dual=False, tol=1e-4, C=1.0,
+                 threshold=0.5,
+                 fit_intercept=True, intercept_scaling=1, class_weight=None,
+                 random_state=None):
+        super(LogisticRegression, self).__init__(
+            penalty=penalty, dual=dual, loss='lr', tol=tol, C=C,
+            fit_intercept=fit_intercept, intercept_scaling=intercept_scaling,
+            class_weight=class_weight, random_state=random_state)
+        self.threshold = threshold
+
+    def predict(self, X):
+        probs = self.predict_proba(X)[:, self.classes_].flatten()
+        return probs > self.threshold
 
 
 def train_test_split(*arrays, **options):

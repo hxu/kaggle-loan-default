@@ -44,6 +44,24 @@ def get_train_y():
     return pd.read_csv(TRAIN_DATA_FILE, na_values='NA', index_col='id', usecols=['id', 'loss'])
 
 
+def f1_scores(precision, recall):
+    """
+    Gets array of f1 scores for all precisions and recalls
+    """
+    res = []
+    for p, r in zip(precision, recall):
+        if (p + r) != 0:
+            res.append(2 * (p * r) / (p + r))
+        else:
+            res.append(0)
+    return np.array(res)
+
+
+def plot(arr):
+    pl.plot(arr)
+    pl.show()
+
+
 def plot_roc(fpr, tpr):
     score = auc(fpr, tpr)
     pl.clf()
@@ -231,6 +249,35 @@ class CategoricalExpansion(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         return self.encoder_.transform(X.loc[:, self.mask_])
+
+
+class ColumnSelector(BaseEstimator, TransformerMixin):
+    """
+    Given a dataframe, return only the given column indices
+
+    Arguments:
+    =========
+    col_idx: integer or array of integers
+        The indices of the columns to return
+
+    Returns:
+    ========
+    DataFrame of the selected columns
+    """
+    def __init__(self, cols):
+        if not isinstance(cols, list):
+            cols = [cols]
+
+        self.cols = cols
+
+    def fit(self, X=None, y=None):
+        return self
+
+    def transform(self, X):
+        if isinstance(self.cols[0], str):
+            return X.loc[:, self.cols]
+        else:
+            return X.iloc[:, self.cols]
 
 
 def train_test_split(*arrays, **options):

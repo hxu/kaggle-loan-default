@@ -7,6 +7,7 @@ from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, me
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, Imputer
 import classes
+from classes import plot
 import numpy as np
 import pandas as pd
 from classes import logger
@@ -218,7 +219,7 @@ def golden_features_001():
 
     train_x, test_x, \
     train_y, test_y, \
-    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.5)
+    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.2)
 
     del x
     gc.collect()
@@ -238,7 +239,7 @@ def golden_features_001():
     features_x_test = pipeline.transform(test_x)
 
     # Get only positive probabilities
-    pred_y = estimator.predict_proba(features_x_test)[:, estimator.classes_]
+    pred_y = estimator.predict_proba(features_x_test)[:, estimator.classes_].flatten()
 
     # Precision: tp / (tp + fp)
     # Recall: tp / (tp + fn)
@@ -248,6 +249,7 @@ def golden_features_001():
     # so the tpr is the # of true positives / total positives
     # fpr must be # of false positives / negatives
     fpr, tpr, thresholds = roc_curve(test_y_default.values, pred_y)
+    f1s = classes.f1_scores(precision, recall)
     average_precision = average_precision_score(test_y_default.values, pred_y)
     threshold = classes.get_threshold(fpr, tpr, thresholds)
 
@@ -260,7 +262,40 @@ def golden_features_001():
 
 def golden_features_002():
     """
-    Trying out f275 and f521 sort order
+    Maybe Trying out f275 and f521 sort order
     see http://www.kaggle.com/c/loan-default-prediction/forums/t/6962/important-new-data-leakage?page=3
+
+    Or just looking for more features
+    Some are reporting AUCs of .99 and F1s of .91 with just 2-4 features
+    Not that many features, so parallelized search should be pretty fast
     """
-    pass
+
+    x, y = classes.get_train_data()
+    # Adding f247 makes the result worse
+    # x = x[['f527', 'f528', 'f247']]
+    # Diff doesn't improve any
+    y_default = y > 0
+
+    train_x, test_x, \
+    train_y, test_y, \
+    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.2)
+
+    del x
+    gc.collect()
+
+    cols = train_x.columns.tolist()
+
+    select = classes.ColumnSelector(cols=0)
+    impute = Imputer()
+    scale = StandardScaler()
+    estimator = LogisticRegression(C=1e20)
+
+    pipeline = Pipeline([
+        ('select', select),
+        ('impute', impute),
+        ('scale', scale),
+        ('estimator', estimator)
+    ])
+
+    pipeline.fit(train_x, train_y_default)
+    pred_y = pipeline.predict_proba(test_x)[:, estimator.classes_].flatten()

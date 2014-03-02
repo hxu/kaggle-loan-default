@@ -341,13 +341,12 @@ def parallel_column_search(x, y, cs, loss=None):
 
 def golden_features_002():
     """
-    Maybe Trying out f275 and f521 sort order
-    see http://www.kaggle.com/c/loan-default-prediction/forums/t/6962/important-new-data-leakage?page=3
-
     Or just looking for more features
     Some are reporting AUCs of .99 and F1s of .91 with just 2-4 features
 
     GridCV doesn't quite play well with this pipeline, so we'll roll our own
+
+    This was kind of a bust, no real improvements
     """
 
     x, y = classes.get_train_data()
@@ -453,14 +452,13 @@ def golden_features_003():
                 corrs.append((col, inner_col, val))
 
     corrs = sorted(corrs, key=lambda l: l[2], reverse=True)
+    corrs = sorted(corrs, key=lambda l: l[2])
 
     # Actually using fewer columns seems to improve the metrics
     # If you use only one column, then most have terrible AUC and other scores
     # But the golden features seem to have substantially better AUCs
     # Or F1 scores
     # So lets try scanning the first couple hundred or so individually
-    # col_pairs = [(c[0], c[1]) for c in corrs[0:100]]
-    # col_pairs += [(c[0], c[1]) for c in corrs[-10:]]
     candidates = []
     for i, c in enumerate(corrs):
         if i % 10 == 0:
@@ -468,7 +466,8 @@ def golden_features_003():
 
         name = c[0] + '-' + c[1]
         df = pd.DataFrame({
-            name: x[c[0]] - x[c[1]]
+            # name: x[c[0]] - x[c[1]]
+            name: x[c[0]] / x[c[1]]
         })
         res = cv_for_column(df, y_default, name, y)
         AUC_THRESHOLD = 0.7
@@ -482,7 +481,9 @@ def golden_features_003():
                 averages['mae'] <= MAE_THRESHOLD:
             candidates.append(res)
 
-    # Scanned 1100 pairs and got three candidates
+    # Scanned 1100 pairs from the front with subtraction and got three candidates
+    # These three get us AUC of .93/.94 and F1 of .71 - .75
+    # Scanned 1000 pairs from the back with subtraction and got no candidates
 
     # df = pd.DataFrame(cols)
     df = pd.DataFrame({
@@ -492,5 +493,28 @@ def golden_features_003():
     })
     res = cv_for_column(df, y_default, df.columns.tolist(), y)
 
-    # cols = df.columns.tolist()
-    # We'll split into 100 jobs so we can get status updates from Parallel
+    # Scan each column individually
+    # No candidates
+    candidates = []
+    for c in x.columns:
+        if i % 10 == 0:
+            logger.info("{} columns scanned, {} candidates found".format(i, len(candidates)))
+        res = cv_for_column(x, y_default, c, y)
+        AUC_THRESHOLD = 0.7
+        PRECISION_THRESHOLD = 0.6
+        F1_THRESHOLD = 0.6
+        MAE_THRESHOLD = 0.75
+        averages = dict((k, sum(v) / len(v)) for k, v in res.items() if len(v) == 5)
+        if averages['auc'] >= AUC_THRESHOLD or \
+                averages['avg_prec'] >= PRECISION_THRESHOLD or \
+                averages['f1'] >= F1_THRESHOLD or \
+                averages['mae'] <= MAE_THRESHOLD:
+            candidates.append(res)
+
+
+def golden_feature_004():
+    """
+    Maybe Trying out f275 and f521 sort order
+    see http://www.kaggle.com/c/loan-default-prediction/forums/t/6962/important-new-data-leakage?page=3
+    """
+    pass

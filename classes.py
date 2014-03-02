@@ -46,6 +46,11 @@ def get_train_y():
     return pd.read_csv(TRAIN_DATA_FILE, na_values='NA', index_col='id', usecols=['id', 'loss'])
 
 
+def get_test_data():
+    data = pd.read_csv(TEST_DATA_FILE, na_values='NA', index_col='id')
+    return data
+
+
 def f1_scores(precision, recall):
     """
     Gets array of f1 scores for all precisions and recalls

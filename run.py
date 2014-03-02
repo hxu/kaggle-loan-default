@@ -516,5 +516,56 @@ def golden_feature_004():
     """
     Maybe Trying out f275 and f521 sort order
     see http://www.kaggle.com/c/loan-default-prediction/forums/t/6962/important-new-data-leakage?page=3
+
+    Not sure if doing this right, but doesn't seem to be working
     """
-    pass
+    x, y = classes.get_train_data()
+    y_default = y > 0
+
+    # Strategy:
+    # Iterate over the rows of 275 and 521
+    # Write False to a new series if current row value of 275 matches the last
+    # Write True if it doesn't match
+    sort = x[['f275', 'f521']].sort(['f275', 'f521'])
+    is_last = pd.DataFrame({
+        'is_last': np.zeros((sort.shape[0]))
+    }, index=sort.index)
+
+    last_f275 = 0
+    for i, f275, f521 in sort.itertuples():
+        if f275 != last_f275:
+            is_last.loc[i - 1] = 1
+        last_f275 = f275
+
+    joined = is_last.join(y)
+    sum(joined.loc[joined['is_last'] == 1]['loss'] > 0)
+
+    train_x, test_x, \
+    train_y, test_y, \
+    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.2)
+
+    """
+    # Sort train_x on f275 then f521
+    train_x = train_x.sort(['f275', 'f521'])
+    train_x[['f275', 'f521']].iloc[1000:1050]
+    train_y = train_y.loc[train_x.index]
+
+    merged = train_x[['f275', 'f521']].join(train_y)
+    x = x.sort(['f275', 'f521'])
+    merged = x[['f275', 'f521']].join(y)
+    # The cv split causes problems, because it can break up the sequence
+    # Do any values of f275 exist in the test set?
+    test = classes.get_test_data()
+    test = test[['f275', 'f521']]
+    joined = test.join(merged, on='f275', lsuffix='test', rsuffix='train')
+    joined.loc[np.logical_not(np.isnan(joined['f275train']))]
+    # Seems to be only 204 duplicates
+    # But something weird about this join, the columns aren't actually equal
+    # This method gives only 804 duplicates
+    test = test['f275'].unique()
+    merged = merged['f275'].unique()
+    rows = []
+    for r in merged:
+        if r in test:
+            rows.append(r)
+    """

@@ -457,26 +457,40 @@ def golden_features_003():
     # Actually using fewer columns seems to improve the metrics
     # If you use only one column, then most have terrible AUC and other scores
     # But the golden features seem to have substantially better AUCs
+    # Or F1 scores
     # So lets try scanning the first couple hundred or so individually
-    col_pairs = [(c[0], c[1]) for c in corrs[0:100]]
+    # col_pairs = [(c[0], c[1]) for c in corrs[0:100]]
     # col_pairs += [(c[0], c[1]) for c in corrs[-10:]]
+    candidates = []
+    for i, c in enumerate(corrs):
+        if i % 10 == 0:
+            logger.info("{} pairs scanned, {} candidates found".format(i, len(candidates)))
 
-    # Diff each pair and add it to a new dataset
-    cols = {}
-    for c in col_pairs:
         name = c[0] + '-' + c[1]
-        cols[name] = x[c[0]] - x[c[1]]
+        df = pd.DataFrame({
+            name: x[c[0]] - x[c[1]]
+        })
+        res = cv_for_column(df, y_default, name, y)
+        AUC_THRESHOLD = 0.7
+        PRECISION_THRESHOLD = 0.6
+        F1_THRESHOLD = 0.6
+        MAE_THRESHOLD = 0.75
+        averages = dict((k, sum(v) / len(v)) for k, v in res.items() if len(v) == 5)
+        if averages['auc'] >= AUC_THRESHOLD or \
+                averages['avg_prec'] >= PRECISION_THRESHOLD or \
+                averages['f1'] >= F1_THRESHOLD or \
+                averages['mae'] <= MAE_THRESHOLD:
+            candidates.append(res)
 
-    df = pd.DataFrame(cols)
-    # res = cv_for_column(df, y_default, df.columns.tolist(), y)
+    # Scanned 1100 pairs and got three candidates
 
-    cols = df.columns.tolist()
+    # df = pd.DataFrame(cols)
+    df = pd.DataFrame({
+        'x1': x['f527'] - x['f528'],
+        'x2': x['f274'] - x['f528'],
+        'x3': x['f274'] - x['f527']
+    })
+    res = cv_for_column(df, y_default, df.columns.tolist(), y)
+
+    # cols = df.columns.tolist()
     # We'll split into 100 jobs so we can get status updates from Parallel
-    chunks = classes.chunks(cols, 100)
-    res = Parallel(n_jobs=4, verbose=50)(
-        delayed(parallel_column_search)(df, y_default, cs, y) for cs in chunks
-    )
-
-    res = list(itertools.chain.from_iterable(res))
-    aucs = sorted([(r['column'], sum(r['auc']) / 5.0) for r in res], key=lambda l: l[1])
-    avg_precs = sorted([(r['column'], sum(r['avg_prec']) / 5.0) for r in res], key=lambda l: l[1])

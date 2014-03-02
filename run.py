@@ -280,14 +280,14 @@ def golden_features_001():
 
 
 def cv_for_column(x, y, c):
-    logger.info("Testing column {}".format(c))
     kfold = StratifiedKFold(y, n_folds=5)
     this_res = {
         'column': c,
         'auc': [],
         'avg_prec': [],
         'f1': [],
-        'threshold': []
+        'threshold': [],
+        'mae': []
     }
 
     # Select the column first so we don't run into memory issues
@@ -309,18 +309,22 @@ def cv_for_column(x, y, c):
         ])
 
         pipeline.fit(train_x, train_y)
-        pred_y = pipeline.predict_proba(test_x)[:, estimator.classes_].flatten()
-        auc = roc_auc_score(test_y.values, pred_y)
-        average_precision = average_precision_score(test_y.values, pred_y)
+        pred_test = pipeline.predict_proba(test_x)[:, estimator.classes_].flatten()
+        auc = roc_auc_score(test_y.values, pred_test)
+        average_precision = average_precision_score(test_y.values, pred_test)
         precision, recall, thresholds = precision_recall_curve(
-            test_y.values, pred_y)
+            test_y.values, pred_test)
         f1s = classes.f1_scores(precision, recall)
         max_f1 = f1s.max()
         threshold = thresholds[f1s.argmax()]
+        preds = (pred_test > threshold).astype(np.float64)
+        score = mean_absolute_error(test_y, preds)
+
         this_res['auc'].append(auc)
         this_res['avg_prec'].append(average_precision)
         this_res['f1'].append(max_f1)
         this_res['threshold'].append(threshold)
+        this_res['mae'].append(score)
     return this_res
 
 
@@ -418,3 +422,58 @@ def golden_features_003():
     Some have suggested to look for differences between highly correlated columns
     Then optimize around MAE
     """
+    x, y = classes.get_train_data()
+    y_default = y > 0
+
+    remove_obj = classes.RemoveObjectColumns()
+    remove_novar = classes.RemoveNoVarianceColumns()
+    clean = Pipeline([
+        ('obj', remove_obj),
+        ('novar', remove_novar),
+    ])
+    x = clean.fit_transform(x)
+
+    # the bultin x.corr() seems quite slow
+    # Or maybe it already got past this point and was fitting...
+    # Use a subset of the rows
+    corr_x = x.iloc[0:15000]
+    corrs = []
+    counter = 0
+    # Now we want to get the pairs of columns that are highly correlated
+    for i, col in enumerate(x.columns):
+        if counter % 100 == 0:
+            logger.info("Calculating correlations for {}".format(col))
+        counter += 1
+        for inner_col in x.columns[i:]:
+            val = corr_x[col].corr(corr_x[inner_col])
+            if val < 1 and not np.isnan(val):
+                corrs.append((col, inner_col, val))
+
+    corrs = sorted(corrs, key=lambda l: l[2], reverse=True)
+
+    # Get the top and bottom 100 pairs of columns
+    col_pairs = [(c[0], c[1]) for c in corrs[0:100]]
+    col_pairs += [(c[0], c[1]) for c in corrs[-100:]]
+
+    # Diff each pair and add it to a new dataset
+    cols = {}
+    for c in col_pairs:
+        name = c[0] + '-' + c[1]
+        cols[name] = x[c[0]] - x[c[1]]
+
+    df = pd.DataFrame(cols)
+
+    kfold = StratifiedKFold(y_default, n_folds=5)
+    this_res = {
+        'auc': [],
+        'avg_prec': [],
+        'f1': [],
+        'threshold': [],
+        'mae': []
+    }
+
+    cols = list(itertools.combinations(df.columns.tolist(), 2))
+    chunks = classes.chunks(cols, 4)
+    res = Parallel(n_jobs=4, verbose=3)(
+        delayed(parallel_column_search)(x, y_default, cs) for cs in chunks
+    )

@@ -279,7 +279,7 @@ def golden_features_001():
     score = mean_absolute_error(test_y, preds)
 
 
-def cv_for_column(x, y, c):
+def cv_for_column(x, y, c, loss=None):
     kfold = StratifiedKFold(y, n_folds=5)
     this_res = {
         'column': c,
@@ -298,6 +298,8 @@ def cv_for_column(x, y, c):
         # This creates copies, so we run into memory errors
         train_x, test_x = this_x.iloc[train_idx], this_x.iloc[test_idx]
         train_y, test_y = y.iloc[train_idx], y.iloc[test_idx]
+        if loss is not None:
+            train_loss, test_loss = loss.iloc[train_idx], loss.iloc[test_idx]
 
         impute = Imputer()
         scale = StandardScaler()
@@ -317,21 +319,22 @@ def cv_for_column(x, y, c):
         f1s = classes.f1_scores(precision, recall)
         max_f1 = f1s.max()
         threshold = thresholds[f1s.argmax()]
-        preds = (pred_test > threshold).astype(np.float64)
-        score = mean_absolute_error(test_y, preds)
 
         this_res['auc'].append(auc)
         this_res['avg_prec'].append(average_precision)
         this_res['f1'].append(max_f1)
         this_res['threshold'].append(threshold)
-        this_res['mae'].append(score)
+        if loss is not None:
+            preds = (pred_test > threshold).astype(np.float64)
+            score = mean_absolute_error(test_loss, preds)
+            this_res['mae'].append(score)
     return this_res
 
 
-def parallel_column_search(x, y, cs):
+def parallel_column_search(x, y, cs, loss=None):
     res = []
     for c in cs:
-        this_res = cv_for_column(x, y, c)
+        this_res = cv_for_column(x, y, c, loss=loss)
         res.append(this_res)
     return res
 
@@ -451,9 +454,12 @@ def golden_features_003():
 
     corrs = sorted(corrs, key=lambda l: l[2], reverse=True)
 
-    # Get the top and bottom 100 pairs of columns
+    # Actually using fewer columns seems to improve the metrics
+    # If you use only one column, then most have terrible AUC and other scores
+    # But the golden features seem to have substantially better AUCs
+    # So lets try scanning the first couple hundred or so individually
     col_pairs = [(c[0], c[1]) for c in corrs[0:100]]
-    col_pairs += [(c[0], c[1]) for c in corrs[-100:]]
+    # col_pairs += [(c[0], c[1]) for c in corrs[-10:]]
 
     # Diff each pair and add it to a new dataset
     cols = {}
@@ -462,18 +468,15 @@ def golden_features_003():
         cols[name] = x[c[0]] - x[c[1]]
 
     df = pd.DataFrame(cols)
+    # res = cv_for_column(df, y_default, df.columns.tolist(), y)
 
-    kfold = StratifiedKFold(y_default, n_folds=5)
-    this_res = {
-        'auc': [],
-        'avg_prec': [],
-        'f1': [],
-        'threshold': [],
-        'mae': []
-    }
-
-    cols = list(itertools.combinations(df.columns.tolist(), 2))
-    chunks = classes.chunks(cols, 4)
-    res = Parallel(n_jobs=4, verbose=3)(
-        delayed(parallel_column_search)(x, y_default, cs) for cs in chunks
+    cols = df.columns.tolist()
+    # We'll split into 100 jobs so we can get status updates from Parallel
+    chunks = classes.chunks(cols, 100)
+    res = Parallel(n_jobs=4, verbose=50)(
+        delayed(parallel_column_search)(df, y_default, cs, y) for cs in chunks
     )
+
+    res = list(itertools.chain.from_iterable(res))
+    aucs = sorted([(r['column'], sum(r['auc']) / 5.0) for r in res], key=lambda l: l[1])
+    avg_precs = sorted([(r['column'], sum(r['avg_prec']) / 5.0) for r in res], key=lambda l: l[1])

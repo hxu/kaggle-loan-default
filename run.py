@@ -702,6 +702,24 @@ def golden_features_003():
                 ('f268', 0.59168087920153611),
                 ]
 
+    # All of these decrease the scores
+    cols_to_try = {xx[0] for xx in (top_f1s + top_aucs)}
+
+    results = []
+    for col in cols_to_try:
+        df = pd.DataFrame({
+            'x1': x['f527'] - x['f528'],
+            'x2': x['f274'] - x['f528'],
+            'x3': x['f274'] - x['f527']
+        })
+        df[col] = x[col]
+        res = cv_for_column(df, y_default, df.columns.tolist(), y)
+        results.append(res)
+
+    f1s = sorted([(xx['column'], sum(xx['f1']) / 5.0) for xx in results], key=lambda l: l[1], reverse=True)
+    aucs = sorted([(xx['column'], sum(xx['auc']) / 5.0) for xx in results], key=lambda l: l[1], reverse=True)
+    maes = sorted([(xx['column'], sum(xx['mae']) / 5.0) for xx in results], key=lambda l: l[1], reverse=True)
+
     # Object columns
     # About half seem to be actually unique
     # The other half can have as few as 6000 unique values

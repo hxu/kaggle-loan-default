@@ -10,7 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, mean_absolute_error, \
     average_precision_score
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler, Imputer
+from sklearn.preprocessing import StandardScaler, Imputer, OneHotEncoder, MinMaxScaler
 import classes
 from classes import plot
 import numpy as np
@@ -183,6 +183,59 @@ def staged_001_sub():
     sub.to_file('staged_001.csv')
 
 
+def staged_002():
+    """
+    Trying to improve on the staged predictor
+
+     - Try some other model besides the random forest
+    """
+    x, y = classes.get_train_data()
+    y_default = y > 0
+
+    train_x, test_x, \
+    train_y, test_y, \
+    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.5)
+
+    del x
+    gc.collect()
+
+    golden = classes.GoldenFeatures(append=False)
+    impute = Imputer()
+    scale = StandardScaler()
+    best_params = {'C': 10.0, 'penalty': 'l1', 'threshold': 0.096666666666666665}
+    logistic = classes.ThresholdLogisticRegression(**best_params)
+
+    logistic_pipeline = Pipeline([
+        ('golden', golden),
+        ('impute', impute),
+        ('scale', scale),
+        ('logistic', logistic)
+    ])
+
+    logistic_pipeline.fit_transform(train_x, y_default)
+    train_default_pred = logistic_pipeline.predict(train_x)
+
+    rf_train_x = train_x.loc[train_default_pred]
+    rf_train_y = train_y.loc[train_default_pred]
+
+    golden_2 = classes.GoldenFeatures(append=True)
+    remove_obj = classes.RemoveObjectColumns()
+    remove_novar = classes.RemoveNoVarianceColumns()
+    remove_unique = classes.RemoveAllUniqueColumns(threshold=0.9)
+    fill_nas = Imputer()
+    rf_estimator = RandomForestRegressor(n_estimators=100, n_jobs=4, verbose=3)
+    rf_pipeline = Pipeline([
+        ('golden', golden_2),
+        ('obj', remove_obj),
+        ('novar', remove_novar),
+        ('unique', remove_unique),
+        ('fill', fill_nas),
+        ('rf', rf_estimator)
+    ])
+    rf_pipeline.fit(rf_train_x, rf_train_y)
+
+
+
 def logistic_001():
     # Logistic regression will automatically oversample the rarer class, maybe
     # this will perform better than RF
@@ -194,7 +247,6 @@ def logistic_001():
     train_x, test_x, \
         train_y, test_y, \
         train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.5)
-
     del x
     gc.collect()
 
@@ -567,6 +619,133 @@ def golden_features_003():
         'x3': x['f274'] - x['f527']
     })
     res = cv_for_column(df, y_default, df.columns.tolist(), y)
+    # Here's the current best
+    res = {'auc': [0.93618096579853471,
+                   0.94864059994440975,
+                   0.94739596218912914,
+                   0.94550080075948706,
+                   0.93705845900939611],
+           'avg_prec': [0.58066954118071457,
+                        0.59066501806052873,
+                        0.62451351853009929,
+                        0.55384440264123291,
+                        0.58537014840505164],
+           'column': ['x1', 'x2', 'x3'],
+           'f1': [0.7357723577235773,
+                  0.73091718971451713,
+                  0.73715124816446398,
+                  0.71190383869716944,
+                  0.75745366639806611],
+           'mae': [0.80180137473334911,
+                   0.8266413842142688,
+                   0.73344394406257407,
+                   0.75702839804674538,
+                   0.7270184421372019],
+           'threshold': [0.097046996835691582,
+                         0.098343861683210645,
+                         0.096169925927102232,
+                         0.096602825455737562,
+                         0.10014138804713153]}
+
+    # try some categorical variables
+    categoricals = ['f2', 'f4', 'f5', 'f778']
+    # Programmatically generate a list of potentially categorical variables
+    uniques = [len(x[xx].unique()) for xx in x.columns]
+    uniques = [2 < xx < 100 for xx in uniques]
+    categoricals = x.columns[uniques]
+
+    results = []
+    for cat in categoricals:
+        logger.info("Trying column {}".format(cat))
+        one_hot = OneHotEncoder()
+        the_col = x[cat]
+        # Some columns also have NANs
+        # So we should impute them here
+        # The imputer is somehow removing rows -- not sure what is going on
+        if sum(np.isnan(the_col)) > 0:
+            impute = Imputer(strategy='most_frequent', axis=0)
+            imputed = impute.fit_transform(the_col.values.reshape(the_col.shape[0], 1))
+            the_col = pd.Series(imputed.reshape(imputed.shape[0]), name=cat)
+        # The one hot encoder only takes integers.  So manually convert to categorical integers
+        if the_col.dtype == np.float64:
+            convert = classes.ConvertFloatToCategory()
+            the_col = convert.fit_transform(the_col)
+
+        df = pd.DataFrame(one_hot.fit_transform(the_col.reshape((the_col.shape[0], 1))).toarray())
+        res = cv_for_column(df, y_default, df.columns.tolist(), y)
+        res['column'] = cat
+        results.append(res)
+
+    f1s = sorted([(xx['column'], sum(xx['f1']) / 5.0) for xx in results], key=lambda l: l[1], reverse=True)
+    aucs = sorted([(xx['column'], sum(xx['auc']) / 5.0) for xx in results], key=lambda l: l[1], reverse=True)
+    maes = sorted([(xx['column'], sum(xx['mae']) / 5.0) for xx in results], key=lambda l: l[1], reverse=True)
+
+    # A few candidates to add
+    top_f1s = [('f323', 0.21559999133998722),
+               ('f675', 0.21338044088524746),
+               ('f400', 0.21317569030181546),
+               ('f676', 0.21213796918846706),
+               ('f765', 0.21213796918846706),
+               ('f315', 0.21138144650843232),
+               ('f182', 0.19851592254698253),
+               ('f192', 0.19804444167618382),
+               ]
+
+    top_aucs = [('f323', 0.61627925494709257),
+                ('f675', 0.61221680691306279),
+                ('f400', 0.61194975758231207),
+                ('f676', 0.61150300785864187),
+                ('f765', 0.61150300785864187),
+                ('f315', 0.59857430298934688),
+                ('f324', 0.59651102811739654),
+                ('f258', 0.59247770884478279),
+                ('f268', 0.59168087920153611),
+                ]
+
+    # Object columns
+    # About half seem to be actually unique
+    # The other half can have as few as 6000 unique values
+    # F136-138 seem to be related
+    # As do f205-f208
+    # Same with f275-277
+    # And f336-338
+    # Seem to be related by some ratio?
+    # Some object columns have lots of trailing zeros, others have all non-zero digits
+    # The latter does seem to be much less common
+    # Maybe it's just a truncate issue
+    obj_cols = [(xx, len(x[xx].unique())) for xx in x.columns if x[xx].dtype == np.object]
+    obj_cols = [('f137', 6550),
+                ('f138', 31152),
+                ('f206', 20087),
+                ('f207', 14511),
+                ('f276', 6041),
+                ('f277', 28710),
+                ('f338', 8663),
+                ('f390', 104662),
+                ('f391', 104659),
+                ('f419', 28965),
+                ('f420', 25772),
+                ('f466', 16801),
+                ('f469', 86420),
+                ('f472', 102913),
+                ('f534', 85376),
+                ('f537', 104114),
+                ('f626', 104754),
+                ('f627', 104751),
+                ('f695', 93730),
+                ('f698', 91986)]
+
+    results = []
+    for col, count in obj_cols:
+        logger.info("Trying column {}".format(col))
+        res = cv_for_column(x, y_default, col, y)
+        res['column'] = col
+        results.append(res)
+
+    # Nothing particularly promising here
+    f1s = sorted([(xx['column'], sum(xx['f1']) / 5.0) for xx in results], key=lambda l: l[1], reverse=True)
+    aucs = sorted([(xx['column'], sum(xx['auc']) / 5.0) for xx in results], key=lambda l: l[1], reverse=True)
+    maes = sorted([(xx['column'], sum(xx['mae']) / 5.0) for xx in results], key=lambda l: l[1], reverse=True)
 
     # Scan each column individually
     # No candidates

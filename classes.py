@@ -344,6 +344,23 @@ class ThresholdLogisticRegression(LogisticRegression):
         return probs > self.threshold
 
 
+class ConvertFloatToCategory(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        pass
+
+    def fit(self, X=None, y=None):
+        return self
+
+    def transform(self, X):
+        # X is a series
+        new = pd.Series(np.zeros(X.shape[0]), dtype=np.int64)
+        vals = list(X.unique())
+        # Assigning by boolean mask seems really slow
+        for i, v in enumerate(X):
+            new[i] = vals.index(v)
+        return new
+
+
 def train_test_split(*arrays, **options):
     """
     Adapted split utility for pandas data frames

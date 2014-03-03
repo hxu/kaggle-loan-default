@@ -25,7 +25,6 @@ def staged_001():
     Staged predictions - first predict whether default or not, then predict amount of default
     """
     # First we predict the defaults
-    LOG_COLUMNS = ['f527', 'f528']
     x, y = classes.get_train_data()
     y_default = y > 0
 
@@ -45,26 +44,48 @@ def staged_001():
         ('scale', scale),
     ])
 
-    features_x = logistic_pipeline.fit_transform(train_x[LOG_COLUMNS])
-    logistic = LogisticRegression(C=1e20)
+    log_x = pd.DataFrame({
+        'x1': train_x['f527'] - train_x['f528'],
+        'x2': train_x['f274'] - train_x['f528'],
+        'x3': train_x['f274'] - train_x['f527']
+    })
+
+    features_x = logistic_pipeline.fit_transform(log_x)
+    # Tune the Logistic Regression
+    logistic = classes.ThresholdLogisticRegression(C=1e20, threshold=0.08)
+    params = {
+        'penalty': ['l1', 'l2'],
+        'C': np.logspace(0, 20, num=21),
+        'threshold': np.linspace(0.07, 0.11, num=10)
+    }
+    grid = GridSearchCV(logistic, params, scoring='f1', cv=5, n_jobs=4, verbose=50)
+    grid.fit(features_x, train_y_default)
+    # In [7]: grid.best_score_
+    # Out[7]: 0.7293931540894103
+
+    # In [8]: grid.best_params_
+    # Out[8]: {'C': 10.0, 'penalty': 'l1', 'threshold': 0.096666666666666665}
+    best_params = {'C': 10.0, 'penalty': 'l1', 'threshold': 0.096666666666666665}
+
+    logistic = classes.ThresholdLogisticRegression(**best_params)
     logistic.fit(features_x, train_y_default)
 
-    # Now we have to pick a threshold
-    # We'll pick a threshold that maximizes tpr - fpr
-    # This will give us a set where about 1/3 of the observations are true positives
     default_pred = logistic.predict_proba(features_x)[:, logistic.classes_].flatten()
     fpr, tpr, thresholds = roc_curve(train_y_default.values, default_pred)
     precision, recall, thresholds = precision_recall_curve(
         train_y_default.values, default_pred)
     average_precision = average_precision_score(train_y_default.values, default_pred)
     score = roc_auc_score(train_y_default.values, default_pred)
-    threshold = classes.get_threshold(fpr, tpr, thresholds)
-    log_mask = default_pred > threshold
+
+    default_pred = logistic.predict(features_x)
 
     # Fit the random forest
-    mask = train_y > 0
-    rf_train_x = train_x.loc[log_mask]
-    rf_train_y = train_y.loc[log_mask]
+    # Also attach the default predicition features
+    rf_train_x = train_x.loc[default_pred]
+    rf_train_y = train_y.loc[default_pred]
+    rf_train_x['x1'] = rf_train_x['f527'] - rf_train_x['f528']
+    rf_train_x['x2'] = rf_train_x['f274'] - rf_train_x['f528']
+    rf_train_x['x3'] = rf_train_x['f274'] - rf_train_x['f527']
 
     remove_obj = classes.RemoveObjectColumns()
     remove_novar = classes.RemoveNoVarianceColumns()
@@ -77,17 +98,24 @@ def staged_001():
         ('fill', fill_nas),
     ])
 
-    rf_estimator = RandomForestRegressor(n_estimators=10, oob_score=True, n_jobs=4, verbose=3)
+    rf_estimator = RandomForestRegressor(n_estimators=10, oob_score=True, n_jobs=4, verbose=3, compute_importances=True)
     rf_features_x = rf_pipeline.fit_transform(rf_train_x)
     rf_estimator.fit(rf_features_x, rf_train_y)
 
     # Now we have two trained estimators, we predict on the test set.
-    features_x_test = logistic_pipeline.transform(test_x[LOG_COLUMNS])
-    default_pred = logistic.predict_proba(features_x_test)[:, logistic.classes_].flatten()
-    default_pred = default_pred > threshold
+    log_x_test = pd.DataFrame({
+        'x1': test_x['f527'] - test_x['f528'],
+        'x2': test_x['f274'] - test_x['f528'],
+        'x3': test_x['f274'] - test_x['f527']
+    })
+    features_x_test = logistic_pipeline.transform(log_x_test)
+    default_pred = logistic.predict(features_x_test)
 
     # Subset the test set with the predict defaults
     rf_test_x = test_x.loc[default_pred]
+    rf_test_x['x1'] = rf_test_x['f527'] - rf_test_x['f528']
+    rf_test_x['x2'] = rf_test_x['f274'] - rf_test_x['f528']
+    rf_test_x['x3'] = rf_test_x['f274'] - rf_test_x['f527']
     rf_features_x_test = rf_pipeline.transform(rf_test_x)
     loss_pred = rf_estimator.predict(rf_features_x_test)
 
@@ -95,17 +123,11 @@ def staged_001():
     preds = default_pred.astype(np.float64)
     preds[preds == 1] = loss_pred
 
-    # This is a pretty terrible MAE score of 2.388 when training RF on true positives only
-    # MAE goes to 1.6 or so when training on predicted positives
+    # Decent score of 0.65 MAE
     score = mean_absolute_error(test_y, preds)
 
-    # what happens if we don't use the RF and just use the average of the defaults?
-    # MAE of 1.2 or so
-    # Issue seems to be still picking up too many false positives
-    mean = rf_train_y.mean()
-    preds = default_pred.astype(np.float64)
-    preds[preds == 1] = mean
-    score = mean_absolute_error(test_y, preds)
+    # Make a submission
+    sub = classes.Submission(score)
 
 
 def logistic_001():

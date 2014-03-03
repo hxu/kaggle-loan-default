@@ -124,10 +124,63 @@ def staged_001():
     preds[preds == 1] = loss_pred
 
     # Decent score of 0.65 MAE
+    # 0.62 on the leaderboard with 100 trees
     score = mean_absolute_error(test_y, preds)
 
+
+def staged_001_sub():
     # Make a submission
-    sub = classes.Submission(score)
+    x, y = classes.get_train_data()
+    y_default = y > 0
+    golden = classes.GoldenFeatures(append=False)
+    impute = Imputer()
+    scale = StandardScaler()
+    best_params = {'C': 10.0, 'penalty': 'l1', 'threshold': 0.096666666666666665}
+    logistic = classes.ThresholdLogisticRegression(**best_params)
+
+    logistic_pipeline = Pipeline([
+        ('golden', golden),
+        ('impute', impute),
+        ('scale', scale),
+        ('logistic', logistic)
+    ])
+
+    logistic_pipeline.fit_transform(x, y_default)
+    train_default_pred = logistic_pipeline.predict(x)
+
+    rf_train_x = x.loc[train_default_pred]
+    rf_train_y = y.loc[train_default_pred]
+
+    golden_2 = classes.GoldenFeatures(append=True)
+    remove_obj = classes.RemoveObjectColumns()
+    remove_novar = classes.RemoveNoVarianceColumns()
+    remove_unique = classes.RemoveAllUniqueColumns(threshold=0.9)
+    fill_nas = Imputer()
+    rf_estimator = RandomForestRegressor(n_estimators=100, n_jobs=4, verbose=3)
+    rf_pipeline = Pipeline([
+        ('golden', golden_2),
+        ('obj', remove_obj),
+        ('novar', remove_novar),
+        ('unique', remove_unique),
+        ('fill', fill_nas),
+        ('rf', rf_estimator)
+    ])
+    rf_pipeline.fit(rf_train_x, rf_train_y)
+
+    del x
+    gc.collect()
+
+    test_x = classes.get_test_data()
+    test_default_pred = logistic_pipeline.predict(test_x)
+
+    rf_test_x = test_x.loc[test_default_pred]
+    loss_pred = rf_pipeline.predict(rf_test_x)
+
+    preds = test_default_pred.astype(np.float64)
+    preds[preds == 1] = loss_pred
+
+    sub = classes.Submission(test_x.index, preds)
+    sub.to_file('staged_001.csv')
 
 
 def logistic_001():

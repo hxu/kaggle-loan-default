@@ -118,8 +118,10 @@ class Submission(object):
     """
     submission_format = ['%i', '%i']
 
-    def __init__(self, data):
-        self.data = data
+    def __init__(self, index, data):
+        self.data = data.reshape(data.shape[0], 1)
+        self.index = index.reshape(index.shape[0], 1)
+        assert self.data.shape == self.index.shape
 
     @staticmethod
     def from_file(filename):
@@ -134,6 +136,8 @@ class Submission(object):
         """
         outpath = os.path.join(SUBMISSION_PATH, filename)
         logger.info("Saving solutions to file {}".format(outpath))
+        np.savetxt(outpath, np.hstack([self.index, self.data]), delimiter=',', header=SUBMISSION_HEADER, fmt=self.submission_format,
+                   comments="")
 
 
 class RemoveObjectColumns(BaseEstimator, TransformerMixin):
@@ -293,6 +297,32 @@ class ColumnSelector(BaseEstimator, TransformerMixin):
             return X.loc[:, self.cols]
         else:
             return X.iloc[:, self.cols]
+
+
+class GoldenFeatures(BaseEstimator, TransformerMixin):
+    """
+    If append, transform returns the original with the columns appended
+    If not, then it only returns the new columns
+    """
+    def __init__(self, append=False):
+        self.append = append
+
+    def fit(self, X=None, y=None):
+        return self
+
+    def transform(self, X):
+        if self.append:
+            X['x1'] = X['f527'] - X['f528']
+            X['x2'] = X['f274'] - X['f528']
+            X['x3'] = X['f274'] - X['f527']
+            return X
+        else:
+            log_x = pd.DataFrame({
+                'x1': X['f527'] - X['f528'],
+                'x2': X['f274'] - X['f528'],
+                'x3': X['f274'] - X['f527']
+            })
+            return log_x
 
 
 class ThresholdLogisticRegression(LogisticRegression):

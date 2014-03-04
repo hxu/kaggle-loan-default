@@ -1086,7 +1086,7 @@ def golden_features_003():
                                   0.19278214132147239]}
 
     # Keep adding features
-    # This added f334, f332, f339, f333
+    # This added f334, f332, f339, f333, f272, f382
     features_to_try = set()
     for f, s in itertools.chain(top_f1s, top_aucs):
         features_to_try.add(f[-1])
@@ -1127,10 +1127,51 @@ def golden_features_003():
 
         if best_col != '':
             logger.info("Adding {}".format(best_col))
+            logger.info("New best score is".format(last))
             results.append(best_res)
             added_cols.append(best_col)
             features_to_try.remove(best_col)
 
+    df = pd.DataFrame({
+        'x1': x['f527'] - x['f528'],
+        'x2': x['f274'] - x['f528'],
+        'x3': x['f274'] - x['f527'],
+        'f2': x['f2'],  # Should maybe expand this?
+        'f271': x['f271'],
+        'f334': x['f334'],
+        'f332': x['f332'],
+        'f339': x['f339'],
+        'f333': x['f333'],
+        'f272': x['f272'],
+        'f382': x['f382'],
+        })
+    res = cv_for_column(df, y_default, df.columns.tolist(), y)
+    last_score = {'auc': [0.97871505366221823,
+                          0.96910247614987921,
+                          0.96835584835702093,
+                          0.97908122500208927,
+                          0.98135494972055093],
+                  'avg_prec': [0.79639064398634463,
+                               0.81259795692774017,
+                               0.83674447709716326,
+                               0.78434081096863095,
+                               0.79401895609489037],
+                  'column': ['f2', 'f271', 'f272', 'f332', 'f333', 'f334', 'f339', 'f382', 'x1', 'x2', 'x3'],
+                  'f1': [0.88145597638957218,
+                         0.89344672336168074,
+                         0.85005170630816962,
+                         0.86642424242424254,
+                         0.89099756690997567],
+                  'mae': [0.76302441336809668,
+                          0.78383503199810378,
+                          0.70154064944299599,
+                          0.71270089603185893,
+                          0.69117716778078031],
+                  'threshold': [0.19879272878209969,
+                                0.19107170622023723,
+                                0.2057004149599149,
+                                0.17720520148327082,
+                                0.19407906851255502]}
 
 
 def golden_feature_004():

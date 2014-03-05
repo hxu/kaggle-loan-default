@@ -394,7 +394,9 @@ def staged_002_sub():
     outer_preds = test_default_pred.astype(np.float64)
     outer_preds[outer_preds == 1] = preds
 
-    sub = classes.Submission(test_x.index, preds)
+    sub = classes.Submission(test_x.index, outer_preds)
+
+    # 0.61 on the leaderboard -- a bit disappointing considering how much the f1 improved by
     sub.to_file('staged_002.csv')
 
 

@@ -185,24 +185,143 @@ def staged_001_sub():
 
 def staged_002():
     """
-    Trying to improve on the staged predictor
-
-     - Try some other model besides the random forest
+    Fitting with more features
+    Will need to retune
     """
     x, y = classes.get_train_data()
     y_default = y > 0
 
     train_x, test_x, \
     train_y, test_y, \
-    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.5)
+    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.2)
 
     del x
     gc.collect()
 
-    golden = classes.GoldenFeatures(append=False)
+    # Fit the logistic regression
     impute = Imputer()
     scale = StandardScaler()
-    best_params = {'C': 10.0, 'penalty': 'l1', 'threshold': 0.096666666666666665}
+
+    logistic_pipeline = Pipeline([
+        ('impute', impute),
+        ('scale', scale),
+    ])
+
+    log_x = pd.DataFrame({
+        'x1': train_x['f527'] - train_x['f528'],
+        'x2': train_x['f274'] - train_x['f528'],
+        'x3': train_x['f274'] - train_x['f527'],
+        'f2': train_x['f2'],  # Should maybe expand this?
+        'f271': train_x['f271'],
+        'f334': train_x['f334'],
+        'f332': train_x['f332'],
+        'f339': train_x['f339'],
+        'f333': train_x['f333'],
+        'f272': train_x['f272'],
+        'f382': train_x['f382'],
+        })
+
+    features_x = logistic_pipeline.fit_transform(log_x)
+    # Tune the Logistic Regression
+    logistic = classes.ThresholdLogisticRegression(C=1e20, threshold=0.08)
+    params = {
+        'penalty': ['l1', 'l2'],
+        'C': np.logspace(0, 20, num=10),
+        'threshold': np.linspace(0.07, 0.3, num=5)
+    }
+    grid = GridSearchCV(logistic, params, scoring='f1', cv=5, n_jobs=4, verbose=50)
+    grid.fit(features_x, train_y_default)
+    # f1 best score is 0.866284090485
+    best_params = {'penalty': 'l1', 'threshold': 0.185, 'C': 1.0}
+
+    logistic = classes.ThresholdLogisticRegression(**best_params)
+    logistic.fit(features_x, train_y_default)
+
+    default_pred = logistic.predict(features_x)
+
+    # now that the classes are a bit more balanced, try fitting a random forest to increase our loss prediction
+    rf_train_x = train_x.loc[default_pred]
+    rf_train_y = train_y.loc[default_pred]
+    rf_train_y_default = train_y_default.loc[default_pred]
+    rf_train_x['x1'] = rf_train_x['f527'] - rf_train_x['f528']
+    rf_train_x['x2'] = rf_train_x['f274'] - rf_train_x['f528']
+    rf_train_x['x3'] = rf_train_x['f274'] - rf_train_x['f527']
+
+    remove_obj = classes.RemoveObjectColumns()
+    remove_novar = classes.RemoveNoVarianceColumns()
+    remove_unique = classes.RemoveAllUniqueColumns(threshold=0.9)
+    fill_nas = Imputer()
+    rf_pipeline = Pipeline([
+        ('obj', remove_obj),
+        ('novar', remove_novar),
+        ('unique', remove_unique),
+        ('fill', fill_nas),
+    ])
+
+    rf_default_estimator = RandomForestClassifier(n_jobs=4, verbose=3)
+    rf_default_features_x = rf_pipeline.fit_transform(rf_train_x)
+    rf_default_estimator.fit(rf_default_features_x, rf_train_y_default)
+    # wow this gets like all of the non-defaults out
+    rf_default_pred = rf_default_estimator.predict(rf_default_features_x)
+
+    loss_train_x = rf_train_x.loc[rf_default_pred]
+    loss_train_y = rf_train_y.loc[rf_default_pred]
+    loss_features_x = rf_pipeline.fit_transform(loss_train_x)
+
+    loss_estimator = RandomForestRegressor(n_estimators=10, oob_score=True, n_jobs=4, verbose=3, compute_importances=True)
+    loss_estimator.fit(loss_features_x, loss_train_y)
+
+    # Now we have two trained estimators, we predict on the test set.
+    log_x_test = pd.DataFrame({
+        'x1': test_x['f527'] - test_x['f528'],
+        'x2': test_x['f274'] - test_x['f528'],
+        'x3': test_x['f274'] - test_x['f527'],
+        'f2': test_x['f2'],
+        'f271': test_x['f271'],
+        'f334': test_x['f334'],
+        'f332': test_x['f332'],
+        'f339': test_x['f339'],
+        'f333': test_x['f333'],
+        'f272': test_x['f272'],
+        'f382': test_x['f382'],
+        })
+    features_x_test = logistic_pipeline.transform(log_x_test)
+    default_pred = logistic.predict(features_x_test)
+
+    # Subset the test set with the predict defaults
+    rf_test_x = test_x.loc[default_pred]
+    rf_test_x['x1'] = rf_test_x['f527'] - rf_test_x['f528']
+    rf_test_x['x2'] = rf_test_x['f274'] - rf_test_x['f528']
+    rf_test_x['x3'] = rf_test_x['f274'] - rf_test_x['f527']
+    rf_features_x_test = rf_pipeline.transform(rf_test_x)
+
+    rf_default_pred = rf_default_estimator.predict(rf_features_x_test)
+    loss_test_x = rf_test_x.loc[rf_default_pred]
+    loss_features_x = rf_pipeline.transform(loss_test_x)
+
+    loss_pred = loss_estimator.predict(loss_features_x)
+
+    # Now we have to build the composite predicted values
+    inner_preds = rf_default_pred.astype(np.float64)
+    inner_preds[inner_preds == 1] = loss_pred
+
+    preds = default_pred.astype(np.float64)
+    preds[preds == 1] = inner_preds
+
+    # 0.62 -- not that much improvement... hmm.
+    score = mean_absolute_error(test_y, preds)
+
+
+def staged_002_sub():
+    # logistic regression
+    x, y = classes.get_train_data()
+    y_default = y > 0
+
+    additional = ['f2', 'f271', 'f334', 'f332', 'f339', 'f333', 'f272', 'f382']
+    golden = classes.GoldenFeatures(append=False, additional_features=additional)
+    impute = Imputer()
+    scale = StandardScaler()
+    best_params = {'penalty': 'l1', 'threshold': 0.185, 'C': 1.0}
     logistic = classes.ThresholdLogisticRegression(**best_params)
 
     logistic_pipeline = Pipeline([
@@ -212,28 +331,71 @@ def staged_002():
         ('logistic', logistic)
     ])
 
-    logistic_pipeline.fit_transform(train_x, y_default)
-    train_default_pred = logistic_pipeline.predict(train_x)
+    logistic_pipeline.fit_transform(x, y_default)
+    train_default_pred = logistic_pipeline.predict(x)
 
-    rf_train_x = train_x.loc[train_default_pred]
-    rf_train_y = train_y.loc[train_default_pred]
+    # Rf for default
+    rf_train_x = x.loc[train_default_pred]
+    rf_train_y = y.loc[train_default_pred]
+    rf_train_y_default = y_default.loc[train_default_pred]
 
     golden_2 = classes.GoldenFeatures(append=True)
+    remove_obj_1 = classes.RemoveObjectColumns()
+    remove_novar_1 = classes.RemoveNoVarianceColumns()
+    remove_unique_1 = classes.RemoveAllUniqueColumns(threshold=0.9)
+    fill_nas_1 = Imputer()
+    rf_estimator = RandomForestClassifier(n_estimators=100, n_jobs=4, verbose=3)
+    rf_default_pipeline = Pipeline([
+        ('golden', golden_2),
+        ('obj', remove_obj_1),
+        ('novar', remove_novar_1),
+        ('unique', remove_unique_1),
+        ('fill', fill_nas_1),
+        ('rf', rf_estimator)
+    ])
+    rf_default_pipeline.fit_transform(rf_train_x, rf_train_y_default)
+    train_default_pred_2 = rf_default_pipeline.predict(rf_train_x)
+
+    # rf for loss
+    loss_train_x = rf_train_x[train_default_pred_2]
+    loss_train_y = rf_train_y[train_default_pred_2]
+
+    golden_3 = classes.GoldenFeatures(append=True)
     remove_obj = classes.RemoveObjectColumns()
     remove_novar = classes.RemoveNoVarianceColumns()
     remove_unique = classes.RemoveAllUniqueColumns(threshold=0.9)
     fill_nas = Imputer()
     rf_estimator = RandomForestRegressor(n_estimators=100, n_jobs=4, verbose=3)
-    rf_pipeline = Pipeline([
-        ('golden', golden_2),
+    loss_pipeline = Pipeline([
+        ('golden', golden_3),
         ('obj', remove_obj),
         ('novar', remove_novar),
         ('unique', remove_unique),
         ('fill', fill_nas),
         ('rf', rf_estimator)
     ])
-    rf_pipeline.fit(rf_train_x, rf_train_y)
+    loss_pipeline.fit(loss_train_x, loss_train_y)
 
+    del x
+    gc.collect()
+
+    test_x = classes.get_test_data()
+    test_default_pred = logistic_pipeline.predict(test_x)
+
+    rf_test_x = test_x.loc[test_default_pred]
+    test_default_pred_2 = rf_default_pipeline.predict(rf_test_x)
+
+    loss_test_x = rf_test_x[test_default_pred_2]
+    loss_pred = loss_pipeline.predict(loss_test_x)
+
+    preds = test_default_pred_2.astype(np.float64)
+    preds[preds == 1] = loss_pred
+
+    outer_preds = test_default_pred.astype(np.float64)
+    outer_preds[outer_preds == 1] = preds
+
+    sub = classes.Submission(test_x.index, preds)
+    sub.to_file('staged_002.csv')
 
 
 def logistic_001():

@@ -304,8 +304,9 @@ class GoldenFeatures(BaseEstimator, TransformerMixin):
     If append, transform returns the original with the columns appended
     If not, then it only returns the new columns
     """
-    def __init__(self, append=False):
+    def __init__(self, append=False, additional_features=None):
         self.append = append
+        self.additional_features = additional_features
 
     def fit(self, X=None, y=None):
         return self
@@ -322,6 +323,8 @@ class GoldenFeatures(BaseEstimator, TransformerMixin):
                 'x2': X['f274'] - X['f528'],
                 'x3': X['f274'] - X['f527']
             })
+            for f in self.additional_features:
+                log_x[f] = X[f]
             return log_x
 
 

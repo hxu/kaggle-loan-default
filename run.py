@@ -2,7 +2,7 @@ from __future__ import division
 import gc
 import itertools
 from sklearn.cross_validation import StratifiedKFold
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, ExtraTreesRegressor
 from sklearn import preprocessing
 from sklearn.externals.joblib import Parallel, delayed
 from sklearn.grid_search import GridSearchCV
@@ -268,8 +268,16 @@ def staged_002():
     loss_train_y = rf_train_y.loc[rf_default_pred]
     loss_features_x = rf_pipeline.fit_transform(loss_train_x)
 
-    loss_estimator = RandomForestRegressor(n_estimators=10, oob_score=True, n_jobs=4, verbose=3, compute_importances=True)
+    loss_estimator = ExtraTreesRegressor(n_estimators=100, n_jobs=4)
+    loss_estimator2 = RandomForestRegressor(n_estimators=100, oob_score=True, n_jobs=4, verbose=3, compute_importances=True)
     loss_estimator.fit(loss_features_x, loss_train_y)
+    loss_estimator2.fit(loss_features_x, loss_train_y)
+
+    train_loss_pred = loss_estimator.predict(loss_features_x)
+    train_loss_pred2 = loss_estimator2.predict(loss_features_x)
+
+    meta_loss_estimator = RandomForestRegressor(n_estimators=10, n_jobs=4)
+    meta_loss_estimator.fit(np.array([train_loss_pred, train_loss_pred2]).T, loss_train_y)
 
     # Now we have two trained estimators, we predict on the test set.
     log_x_test = pd.DataFrame({
@@ -300,10 +308,14 @@ def staged_002():
     loss_features_x = rf_pipeline.transform(loss_test_x)
 
     loss_pred = loss_estimator.predict(loss_features_x)
+    loss_pred2 = loss_estimator2.predict(loss_features_x)
+
+    overall_loss_pred = meta_loss_estimator.predict(np.array([loss_pred, loss_pred]).T)
 
     # Now we have to build the composite predicted values
     inner_preds = rf_default_pred.astype(np.float64)
-    inner_preds[inner_preds == 1] = loss_pred
+    # inner_preds[inner_preds == 1] = loss_pred
+    inner_preds[inner_preds == 1] = overall_loss_pred
 
     preds = default_pred.astype(np.float64)
     preds[preds == 1] = inner_preds
@@ -313,7 +325,7 @@ def staged_002():
 
 
 def staged_002_sub():
-    # logistic regression
+    # double staged, with more features
     x, y = classes.get_train_data()
     y_default = y > 0
 
@@ -344,7 +356,7 @@ def staged_002_sub():
     remove_novar_1 = classes.RemoveNoVarianceColumns()
     remove_unique_1 = classes.RemoveAllUniqueColumns(threshold=0.9)
     fill_nas_1 = Imputer()
-    rf_estimator = RandomForestClassifier(n_estimators=100, n_jobs=4, verbose=3)
+    rf_estimator = RandomForestClassifier(n_estimators=10, n_jobs=4, verbose=3)
     rf_default_pipeline = Pipeline([
         ('golden', golden_2),
         ('obj', remove_obj_1),
@@ -365,7 +377,8 @@ def staged_002_sub():
     remove_novar = classes.RemoveNoVarianceColumns()
     remove_unique = classes.RemoveAllUniqueColumns(threshold=0.9)
     fill_nas = Imputer()
-    rf_estimator = RandomForestRegressor(n_estimators=100, n_jobs=4, verbose=3)
+    # rf_estimator = RandomForestRegressor(n_estimators=100, n_jobs=4, verbose=3)
+    rf_estimator = ExtraTreesRegressor(n_estimators=100, n_jobs=4, verbose=3)
     loss_pipeline = Pipeline([
         ('golden', golden_3),
         ('obj', remove_obj),
@@ -397,7 +410,7 @@ def staged_002_sub():
     sub = classes.Submission(test_x.index, outer_preds)
 
     # 0.61 on the leaderboard -- a bit disappointing considering how much the f1 improved by
-    sub.to_file('staged_002.csv')
+    sub.to_file('staged_002_extra.csv')
 
 
 def staged_003():
@@ -462,6 +475,21 @@ def staged_003():
 
     best_params = {'alpha': 1.0232929922807541}
     log_loss = Ridge(**best_params)
+    log_loss.fit(loss_features, loss_y_scaled)
+
+    test_default_pred = logistic_pipeline.predict(test_x)
+    test_loss_x = test_x[test_default_pred]
+    test_loss_y = test_y[test_default_pred]
+
+    test_loss_features = loss_pipeline.transform(test_loss_x)
+    test_loss_pred = log_loss.predict(test_loss_features) * 100.0
+    test_loss_pred[test_loss_pred < 0] = 0
+
+    test_preds = test_default_pred.astype(np.float64)
+    test_preds[test_default_pred] = test_loss_pred
+
+    # 0.72 on the cv
+    score = mean_absolute_error(test_y, test_preds)
 
 
 def logistic_001():

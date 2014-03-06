@@ -347,6 +347,27 @@ class ThresholdLogisticRegression(LogisticRegression):
         return probs > self.threshold
 
 
+class DefaultPredictTransformer(BaseEstimator, TransformerMixin):
+    """
+    Transform to predicted defaults, to feed into next step of pipeline
+    """
+    def __init__(self):
+        pass
+
+    def fit(self, X, y):
+        best_params = {'penalty': 'l1', 'threshold': 0.185, 'C': 1.0}
+        self.estimator_ = ThresholdLogisticRegression(**best_params)
+        self.estimator_.fit(X, y)
+        return self
+
+    def transform(self, X, y):
+        preds = self.estimator_.predict(X)
+        return X[preds], y[preds]
+
+    def predict(self, X, y):
+        return self.transform(X, y)
+
+
 class ConvertFloatToCategory(BaseEstimator, TransformerMixin):
     def __init__(self):
         pass

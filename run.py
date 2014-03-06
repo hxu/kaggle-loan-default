@@ -6,9 +6,9 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn import preprocessing
 from sklearn.externals.joblib import Parallel, delayed
 from sklearn.grid_search import GridSearchCV
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, mean_absolute_error, \
-    average_precision_score
+    average_precision_score, make_scorer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, Imputer, OneHotEncoder, MinMaxScaler
 import classes
@@ -398,6 +398,70 @@ def staged_002_sub():
 
     # 0.61 on the leaderboard -- a bit disappointing considering how much the f1 improved by
     sub.to_file('staged_002.csv')
+
+
+def staged_003():
+    """
+    Try a logistic regression for loss
+    """
+    x, y = classes.get_train_data()
+    y_default = y > 0
+
+    train_x, test_x, \
+    train_y, test_y, \
+    train_y_default, test_y_default = classes.train_test_split(x, y, y_default, test_size=0.2)
+
+    del x
+    gc.collect()
+
+    additional = ['f2', 'f271', 'f334', 'f332', 'f339', 'f333', 'f272', 'f382']
+    golden = classes.GoldenFeatures(append=False, additional_features=additional)
+    impute = Imputer()
+    scale = StandardScaler()
+    best_params = {'penalty': 'l1', 'threshold': 0.185, 'C': 1.0}
+    logistic = classes.ThresholdLogisticRegression(**best_params)
+
+    logistic_pipeline = Pipeline([
+        ('golden', golden),
+        ('impute', impute),
+        ('scale', scale),
+        ('logistic', logistic)
+    ])
+
+    logistic_pipeline.fit(train_x, train_y_default)
+    train_default_pred = logistic_pipeline.predict(train_x)
+
+    loss_x = train_x[train_default_pred]
+    loss_y = train_y[train_default_pred].astype(np.float64)
+
+    golden_1 = classes.GoldenFeatures(append=False, additional_features=additional)
+    impute_1 = Imputer()
+    scale_1 = StandardScaler()
+    loss_pipeline = Pipeline([
+        ('golden', golden_1),
+        ('impute', impute_1),
+        ('scale', scale_1),
+    ])
+
+    loss_features = loss_pipeline.fit_transform(loss_x)
+    # Also gotta scale the loss_y to (0,1)
+    loss_y_scaled = loss_y.values / 100.0
+
+    loss_pred = Ridge()
+    loss_pred.fit(loss_features, loss_y_scaled)
+    preds = loss_pred.predict(loss_features) * 100.0
+    preds[preds < 0] = 0
+    # rescale to 0 to 100
+
+    params = {
+        'alpha': np.logspace(0.01, 100, num=10)
+    }
+    log_loss = Ridge()
+    grid = GridSearchCV(log_loss, params, make_scorer(mean_absolute_error), cv=5, n_jobs=4, verbose=50)
+    grid.fit(loss_features, loss_y_scaled)
+
+    best_params = {'alpha': 1.0232929922807541}
+    log_loss = Ridge(**best_params)
 
 
 def logistic_001():

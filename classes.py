@@ -364,6 +364,56 @@ class ConvertFloatToCategory(BaseEstimator, TransformerMixin):
         return new
 
 
+class ExpandCategorical(BaseEstimator, TransformerMixin):
+    def __init__(self, columns, append=False, only_new=False):
+        if isinstance(columns, str):
+            columns = [columns]
+        self.columns = columns
+        self.append = append
+        self.only_new = only_new
+
+    def fit(self, X=None, y=None):
+        self.encoder_ = OneHotEncoder()
+        self.encoder_.fit(X.loc[:, self.columns])
+        # Expand the column names
+        new_colnames = []
+        for i, c in enumerate(self.columns):
+            this_map = self.encoder_.active_features_[self.encoder_.feature_indices_[i]:self.encoder_.feature_indices_[i+1]]
+            for n in this_map:
+                new_colnames.append("{}_{}".format(c, str(n)))
+
+        self.new_colnames_ = new_colnames
+        return self
+
+    def transform(self, X):
+        new_data = pd.DataFrame(self.encoder_.transform(X.loc[:, self.columns]).toarray(), index=X.index, columns=self.new_colnames_)
+        assert new_data.shape[0] == X.shape[0], "Row lengths do not match"
+        if self.only_new:
+            return new_data
+        res = X.copy()
+        if not self.append:
+            # Remove the unexpanded columns from the data frame
+            for c in self.columns:
+                res.drop(c, 1, inplace=True)
+        return res.join(new_data)
+
+
+class LogLoss(LogisticRegression):
+    def __init__(self, penalty='l2', dual=False, tol=1e-4, C=1.0,
+                 threshold=0.5,
+                 fit_intercept=True, intercept_scaling=1, class_weight=None,
+                 random_state=None):
+        super(LogisticRegression, self).__init__(
+            penalty=penalty, dual=dual, loss='lr', tol=tol, C=C,
+            fit_intercept=fit_intercept, intercept_scaling=intercept_scaling,
+            class_weight=class_weight, random_state=random_state)
+        self.threshold = threshold
+
+    def predict(self, X):
+        probs = self.predict_proba(X)[:, self.classes_].flatten()
+        return probs
+
+
 def train_test_split(*arrays, **options):
     """
     Adapted split utility for pandas data frames
